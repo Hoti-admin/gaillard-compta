@@ -2,12 +2,14 @@
   "name": "gaillard-compta",
   "version": "0.1.0",
   "private": true,
+  
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
-  },
+    "postinstall": "prisma generate"
+  }
+
   "dependencies": {
     "@prisma/adapter-pg": "^7.3.0",
     "@prisma/client": "^7.3.0",
