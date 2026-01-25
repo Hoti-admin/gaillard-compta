@@ -1,65 +1,135 @@
-import Image from "next/image";
+import { prisma } from "@/lib/prisma";
+import { chf, daysLate, sumPaidCents } from "@/lib/utils";
+import { Container, PageTitle, Stat, Card, Table, A, Badge, Select, ButtonGhost } from "@/components/ui";
 
-export default function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams?: Promise<{ year?: string }>;
+}) {
+  const sp = searchParams ? await searchParams : {};
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const year = Number(sp.year || currentYear);
+
+  const from = new Date(`${year}-01-01T00:00:00.000Z`);
+  const to = new Date(`${year + 1}-01-01T00:00:00.000Z`);
+
+  // Factures (toutes pour les retards)
+  const invoicesAll = await prisma.invoice.findMany({
+    where: { status: { not: "CANCELED" } },
+    include: { client: true, payments: true },
+    orderBy: { dueDate: "asc" },
+    take: 5000,
+  });
+
+  // Factures de l'année (pour CA)
+  const invoicesYear = invoicesAll.filter((i) => i.issueDate >= from && i.issueDate < to);
+
+  const invRows = invoicesAll.map((i) => {
+    const paid = sumPaidCents(i.payments);
+    const outstanding = Math.max(0, i.amountGrossCents - paid);
+    const late = daysLate(i.dueDate, outstanding, now);
+    return { ...i, paid, outstanding, late, isLate: late > 0 && outstanding > 0 };
+  });
+
+  const ar = invRows.reduce((a, r) => a + r.outstanding, 0);
+  const arLate = invRows.reduce((a, r) => a + (r.isLate ? r.outstanding : 0), 0);
+
+  // TOP 10 retards (montant)
+  const byLateClient = new Map<string, { clientId: string; name: string; lateCents: number; maxLate: number }>();
+  for (const r of invRows) {
+    if (!r.isLate) continue;
+    const cur = byLateClient.get(r.clientId) || {
+      clientId: r.clientId,
+      name: r.client.name,
+      lateCents: 0,
+      maxLate: 0,
+    };
+    cur.lateCents += r.outstanding;
+    cur.maxLate = Math.max(cur.maxLate, r.late);
+    byLateClient.set(r.clientId, cur);
+  }
+  const topRetards = Array.from(byLateClient.values()).sort((a, b) => b.lateCents - a.lateCents).slice(0, 10);
+
+  // TOP 10 CA clients sur l'année (TTC facturé)
+  const byTurnover = new Map<string, { clientId: string; name: string; gross: number; vat: number }>();
+  for (const i of invoicesYear) {
+    const cur = byTurnover.get(i.clientId) || { clientId: i.clientId, name: i.client.name, gross: 0, vat: 0 };
+    cur.gross += i.amountGrossCents;
+    cur.vat += i.amountVatCents;
+    byTurnover.set(i.clientId, cur);
+  }
+  const topCA = Array.from(byTurnover.values()).sort((a, b) => b.gross - a.gross).slice(0, 10);
+
+  const yearGross = invoicesYear.reduce((a, i) => a + i.amountGrossCents, 0);
+  const yearVat = invoicesYear.reduce((a, i) => a + i.amountVatCents, 0);
+
+  // Achats année (TTC + TVA payée)
+  const billsYear = await prisma.bill.findMany({
+    where: { issueDate: { gte: from, lt: to }, status: { not: "CANCELED" } },
+    include: { supplier: true },
+    take: 10000,
+  });
+
+  const purchasesGross = billsYear.reduce((a, b) => a + b.amountGrossCents, 0);
+  const purchasesVat = billsYear.reduce((a, b) => a + b.amountVatCents, 0);
+
+  const years = [currentYear, currentYear - 1, currentYear - 2];
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <Container>
+      <PageTitle
+        title="Dashboard"
+        subtitle={`Vue d’ensemble (filtre année : ${year})`}
+        right={
+          <form action="/" method="get" className="flex items-center gap-2">
+            <Select name="year" defaultValue={String(year)} className="w-32">
+              {years.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </Select>
+            <ButtonGhost type="submit">Appliquer</ButtonGhost>
+          </form>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Stat label="Encours clients (à encaisser)" value={chf(ar)} sub={`En retard: ${chf(arLate)}`} />
+        <Stat label={`CA clients (TTC) ${year}`} value={chf(yearGross)} sub={`TVA facturée: ${chf(yearVat)}`} />
+        <Stat label={`Achats (TTC) ${year}`} value={chf(purchasesGross)} sub={`TVA payée: ${chf(purchasesVat)}`} />
+        <Stat label="Factures en retard" value={`${invRows.filter((r) => r.isLate).length}`} sub="Basé sur l’échéance" />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card title={`Top 10 clients (CA TTC) – ${year}`}>
+          <Table
+            headers={["Client", "CA TTC", "TVA"]}
+            rows={topCA.map((c) => [
+              <A key={c.clientId} href={`/clients/${c.clientId}`}>
+                {c.name}
+              </A>,
+              <span className="font-semibold text-slate-900">{chf(c.gross)}</span>,
+              chf(c.vat),
+            ])}
+          />
+        </Card>
+
+        <Card title="Top 10 clients en retard (montant)">
+          <Table
+            headers={["Client", "Montant en retard", "Jours max"]}
+            rows={topRetards.map((c) => [
+              <A key={c.clientId} href={`/clients/${c.clientId}`}>
+                {c.name}
+              </A>,
+              <span className="font-semibold text-slate-900">{chf(c.lateCents)}</span>,
+              <Badge tone="danger">{c.maxLate} j</Badge>,
+            ])}
+          />
+        </Card>
+      </div>
+    </Container>
   );
 }

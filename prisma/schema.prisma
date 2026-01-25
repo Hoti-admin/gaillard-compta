@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum InvoiceStatus {
+  OPEN
+  PAID
+  CANCELED
+}
+
+enum BillStatus {
+  OPEN
+  PAID
+  CANCELED
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  invoices Invoice[]
+
+  @@index([name])
+}
+
+model Invoice {
+  id     String @id @default(cuid())
+  number String @unique
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  issueDate DateTime
+  dueDate   DateTime
+
+  // TVA
+  vatRateBp        Int @default(810)
+  amountGrossCents Int // TTC
+  amountNetCents   Int // HT
+  amountVatCents   Int // TVA
+
+  documentPath String?
+
+  status    InvoiceStatus @default(OPEN)
+  notes     String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  payments Payment[]
+
+  @@index([clientId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model Payment {
+  id String @id @default(cuid())
+
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  date        DateTime
+  amountCents Int
+  method      String?
+  reference   String?
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([date])
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  email     String?
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  bills Bill[]
+
+  @@index([name])
+}
+
+model Bill {
+  id String @id @default(cuid())
+
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  number    String?
+  issueDate DateTime
+  dueDate   DateTime
+
+  // TVA
+  vatRateBp        Int @default(810)
+  amountGrossCents Int
+  amountNetCents   Int
+  amountVatCents   Int
+
+  documentPath String?
+
+  status    BillStatus @default(OPEN)
+  notes     String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  payments BillPayment[]
+
+  @@index([supplierId])
+  @@index([dueDate])
+  @@index([status])
+}
+
+model BillPayment {
+  id String @id @default(cuid())
+
+  billId String
+  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  date        DateTime
+  amountCents Int
+  method      String?
+  reference   String?
+  createdAt   DateTime @default(now())
+
+  @@index([billId])
+  @@index([date])
+}
+
+enum ExpenseCategory {
+  RESTAURANT
+  CARBURANT
+  PARKING
+  FOURNITURES
+  OUTILLAGE
+  TELEPHONE
+  INTERNET
+  TRANSPORT
+  DIVERS
+}
+
+model Expense {
+  id String @id @default(cuid())
+
+  date     DateTime
+  vendor   String // ex: "Restaurant XX", "Parking", "Coop", etc.
+  category ExpenseCategory
+
+  // TVA
+  vatRateBp        Int @default(810) // 810 = 8.10%
+  amountGrossCents Int // TTC
+  amountNetCents   Int // HT
+  amountVatCents   Int // TVA
+
+  receiptPath String? // PDF/photo reçu (optionnel)
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([category])
+  @@index([vendor])
+}
