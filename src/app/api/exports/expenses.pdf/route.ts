@@ -160,7 +160,13 @@ export async function GET(req: Request) {
         width: 36,
         height: 36,
         color: blue600,
-        borderRadius: 6 as any,
+        page.drawRectangle({
+  x: ...,
+  y: ...,
+  width: ...,
+  height: ...,
+  color: blue600,
+});
       });
     }
 
@@ -542,13 +548,12 @@ export async function GET(req: Request) {
 
     const bytes = await pdf2.save();
 
-    return new NextResponse(Buffer.from(bytes), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="depenses_${year}.pdf"`,
-        "Cache-Control": "no-store",
-      },
-    });
+    return new NextResponse(new Uint8Array(pdf), {
+  headers: {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="achats-fournisseurs-${year}.pdf"`,
+  },
+});
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Erreur PDF" }, { status: 500 });
   }
