@@ -1,13 +1,13 @@
 import { prisma } from "@/lib/prisma";
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Card, Container, Button, Input, Select, Table, Badge, PageTitle } from "@/components/ui";
+import { revalidatePath } from "next/cache";
 import { createBillForSupplier } from "@/app/actions";
 import { chf, isoDate } from "@/lib/utils";
-import { notFound } from "next/navigation";
+import { Card, Container, Button, Input, Select, Table, Badge, PageTitle } from "@/components/ui";
 
 type PageProps = {
   params: Promise<{ id: string }> | { id: string };
-  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, any>;
 };
 
 export default async function SupplierDetail(props: PageProps) {
@@ -23,6 +23,34 @@ export default async function SupplierDetail(props: PageProps) {
   });
 
   if (!supplier) return notFound();
+
+  // ✅ Wrapper "use server" pour convertir FormData -> objet
+  async function createBillAction(formData: FormData) {
+    "use server";
+
+    const supplierId = String(formData.get("supplierId") || "");
+    const number = String(formData.get("number") || "").trim() || null;
+    const issueDate = String(formData.get("issueDate") || "");
+    const dueDate = String(formData.get("dueDate") || "");
+    const totalTtc = Number(String(formData.get("totalTtc") || "0").replace(",", "."));
+    const vatRate = Number(String(formData.get("vatRate") || "8.1").replace(",", "."));
+    const notes = String(formData.get("notes") || "").trim() || null;
+
+    // vatRateBp attendu (810 = 8.1%)
+    const vatRateBp = Math.round(vatRate * 100);
+
+    await createBillForSupplier({
+      supplierId,
+      number,
+      issueDate,
+      dueDate,
+      totalTtc,
+      vatRateBp,
+      notes,
+    });
+
+    revalidatePath(`/suppliers/${supplierId}`);
+  }
 
   return (
     <Container>
@@ -42,29 +70,29 @@ export default async function SupplierDetail(props: PageProps) {
         </Link>
       </div>
 
-      {/* Création achat (server action) */}
+      {/* ✅ Création achat */}
       <Card className="mt-6">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-base font-bold text-slate-900">Nouvel achat (facture fournisseur)</div>
+          <div className="text-base font-bold text-slate-900">Nouvel achat</div>
           <Badge tone="neutral">TVA auto</Badge>
         </div>
 
-        <form action={createBillForSupplier} className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
+        <form action={createBillAction} className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
           <input type="hidden" name="supplierId" value={supplier.id} />
 
           <div className="md:col-span-2">
             <div className="text-xs font-semibold text-slate-500 mb-1">N° facture</div>
-            <Input name="number" placeholder="ex: F-2026-001 (optionnel)" />
+            <Input name="number" placeholder="optionnel" />
           </div>
 
           <div className="md:col-span-2">
             <div className="text-xs font-semibold text-slate-500 mb-1">Date facture</div>
-            <Input name="issueDate" type="date" defaultValue={isoDate(new Date())} />
+            <Input name="issueDate" type="date" defaultValue={isoDate(new Date())} required />
           </div>
 
           <div className="md:col-span-2">
             <div className="text-xs font-semibold text-slate-500 mb-1">Échéance</div>
-            <Input name="dueDate" type="date" />
+            <Input name="dueDate" type="date" required />
           </div>
 
           <div className="md:col-span-2">
@@ -75,7 +103,7 @@ export default async function SupplierDetail(props: PageProps) {
           <div className="md:col-span-2">
             <div className="text-xs font-semibold text-slate-500 mb-1">TVA %</div>
             <Select
-              name="tvaRate"
+              name="vatRate"
               defaultValue="8.1"
               options={[
                 { value: "0", label: "0%" },
@@ -86,8 +114,8 @@ export default async function SupplierDetail(props: PageProps) {
           </div>
 
           <div className="md:col-span-2">
-            <div className="text-xs font-semibold text-slate-500 mb-1">Note (optionnel)</div>
-            <Input name="notes" placeholder="ex: Parking, Restaurant, etc." />
+            <div className="text-xs font-semibold text-slate-500 mb-1">Notes</div>
+            <Input name="notes" placeholder="optionnel" />
           </div>
 
           <div className="md:col-span-6 mt-2 flex gap-2">
@@ -96,7 +124,7 @@ export default async function SupplierDetail(props: PageProps) {
         </form>
       </Card>
 
-      {/* Liste achats */}
+      {/* ✅ Liste achats */}
       <Card className="mt-6">
         <div className="flex items-center justify-between">
           <div className="text-base font-bold text-slate-900">Achats</div>
@@ -111,10 +139,8 @@ export default async function SupplierDetail(props: PageProps) {
               const total = b.amountGrossCents / 100;
               const balance = total - paid;
 
-              const tone =
-                balance <= 0 ? "success" : paid > 0 ? "warning" : "danger";
-              const label =
-                balance <= 0 ? "PAID" : paid > 0 ? "PARTIAL" : "OPEN";
+              const tone = balance <= 0 ? "success" : paid > 0 ? "warning" : "danger";
+              const label = balance <= 0 ? "PAID" : paid > 0 ? "PARTIAL" : "OPEN";
 
               return [
                 b.number || "—",
