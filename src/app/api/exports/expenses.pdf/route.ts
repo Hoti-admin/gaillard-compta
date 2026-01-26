@@ -358,16 +358,13 @@ export async function GET(req: Request) {
     rightTotal(chfFromCents(vatTotal), pageW - margin - 70 + 52);
 
     drawFooter();
+const bytes = await pdf.save(); // Uint8Array
+const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength); // ArrayBuffer
 
-    const bytes = await pdf.save(); // Uint8Array
+return new NextResponse(body, {
+  headers: {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="depenses-${year}.pdf"`,
+  },
+});
 
-    return new NextResponse(bytes, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="depenses-${year}.pdf"`,
-      },
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Erreur PDF" }, { status: 500 });
-  }
-}
