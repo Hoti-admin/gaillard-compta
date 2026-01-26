@@ -358,7 +358,8 @@ export async function GET(req: Request) {
     rightTotal(chfFromCents(vatTotal), pageW - margin - 70 + 52);
 
     drawFooter();
-const bytes = await pdf2.save(); // Uint8Array
+const bytes = await pdf.save();
+ // Uint8Array
     const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength); // ArrayBuffer
 
     return new NextResponse(body, {
