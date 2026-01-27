@@ -22,21 +22,21 @@ function parseDateOrNull(v: any): Date | null {
 function parseInvoiceStatus(v: any): InvoiceStatus {
   const s = String(v ?? "").toUpperCase().trim();
 
-  // ✅ adapte ici si ton enum a d’autres valeurs
+  // ✅ valeurs existantes dans ton enum Prisma
   const allowed: InvoiceStatus[] = [
     InvoiceStatus.OPEN,
     InvoiceStatus.PAID,
-    InvoiceStatus.CANCELLED,
+    InvoiceStatus.CANCELED,
   ];
 
-  return (allowed.includes(s as InvoiceStatus) ? (s as InvoiceStatus) : InvoiceStatus.OPEN);
+  return allowed.includes(s as InvoiceStatus) ? (s as InvoiceStatus) : InvoiceStatus.OPEN;
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const supplierId = String(body?.supplierId ?? "");
+    const supplierId = String(body?.supplierId ?? "").trim();
     if (!supplierId) {
       return NextResponse.json({ error: "supplierId manquant" }, { status: 400 });
     }
