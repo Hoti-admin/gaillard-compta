@@ -43,12 +43,9 @@ export async function POST(req: Request) {
     // Status enum
     const status = parseInvoiceStatus(body?.status);
 
-    // Note
-    const note = body?.note ? String(body.note) : null;
+    // ✅ Prisma: champ = "notes" (pas "note")
+    const notes = body?.note ? String(body.note) : body?.notes ? String(body.notes) : null;
 
-    // ✅ IMPORTANT:
-    // On n'écrit PLUS totalTtc / totalHt / totalTva / tvaRate
-    // car ils n'existent pas dans ton modèle Prisma Invoice.
     const created = await prisma.invoice.create({
       data: {
         supplierId,
@@ -56,7 +53,7 @@ export async function POST(req: Request) {
         issueDate,
         ...(dueDate ? { dueDate } : {}),
         status,
-        note,
+        ...(notes ? { notes } : {}), // ✅ pas de champ si vide
       },
     });
 
