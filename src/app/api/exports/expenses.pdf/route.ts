@@ -47,7 +47,13 @@ function loadLogoBytes() {
 }
 
 function isPng(buf: Buffer) {
-  return buf.length > 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  return (
+    buf.length > 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47
+  );
 }
 
 export async function GET(req: Request) {
@@ -64,7 +70,10 @@ export async function GET(req: Request) {
     });
 
     // Totaux
-    const totalsByCategory = new Map<string, { gross: number; net: number; vat: number }>();
+    const totalsByCategory = new Map<
+      string,
+      { gross: number; net: number; vat: number }
+    >();
     let grossTotal = 0;
     let netTotal = 0;
     let vatTotal = 0;
@@ -93,7 +102,7 @@ export async function GET(req: Request) {
 
     const slate900 = rgb(0.06, 0.09, 0.16);
     const slate600 = rgb(0.35, 0.41, 0.49);
-    const slate200 = rgb(0.90, 0.92, 0.95);
+    const slate200 = rgb(0.9, 0.92, 0.95);
     const blue600 = rgb(0.14, 0.36, 0.75);
 
     const margin = 40;
@@ -114,13 +123,13 @@ export async function GET(req: Request) {
     const logoBytes = loadLogoBytes();
 
     const pages: any[] = [];
-    const newPage = async () => {
+    const newPage = () => {
       const p = pdf.addPage([pageW, pageH]);
       pages.push(p);
       return p;
     };
 
-    let p = await newPage();
+    let p = newPage();
     let y = pageH - margin;
 
     const drawHeader = async () => {
@@ -158,10 +167,9 @@ export async function GET(req: Request) {
             });
           }
         } catch {
-          // ignore
+          // ignore logo errors
         }
       } else {
-        // ✅ fallback simple (PAS D'IMBRICATION)
         p.drawRectangle({
           x: margin + 14,
           y: y - 52 + 10,
@@ -171,7 +179,7 @@ export async function GET(req: Request) {
         });
       }
 
-      p.drawText(`Dépenses – Rapport fiduciaire`, {
+      p.drawText("Dépenses – Rapport fiduciaire", {
         x: margin + 120,
         y: y - 30,
         size: 16,
@@ -200,7 +208,13 @@ export async function GET(req: Request) {
       const pageNo = pages.length;
       const txt = `Page ${pageNo}`;
       const tw = font.widthOfTextAtSize(txt, 9);
-      p.drawText(txt, { x: pageW - margin - tw, y: 28, size: 9, font, color: slate600 });
+      p.drawText(txt, {
+        x: pageW - margin - tw,
+        y: 28,
+        size: 9,
+        font,
+        color: slate600,
+      });
     };
 
     const drawTableHeader = () => {
@@ -224,7 +238,6 @@ export async function GET(req: Request) {
         font: fontBold,
         color: slate900,
       });
-
       p.drawText("TTC", { x: tableX + colDate + colCat + colVendor + 8, y: ty, size: 10, font: fontBold, color: slate900 });
       p.drawText("HT", { x: tableX + colDate + colCat + colVendor + colTtc + 8, y: ty, size: 10, font: fontBold, color: slate900 });
       p.drawText("TVA", { x: tableX + colDate + colCat + colVendor + colTtc + colHt + 8, y: ty, size: 10, font: fontBold, color: slate900 });
@@ -232,7 +245,10 @@ export async function GET(req: Request) {
       y -= rowH;
     };
 
-    const drawRow = (vals: { date: string; cat: string; vendor: string; ttc: string; ht: string; tva: string }, altRow: boolean) => {
+    const drawRow = (
+      vals: { date: string; cat: string; vendor: string; ttc: string; ht: string; tva: string },
+      altRow: boolean
+    ) => {
       p.drawRectangle({
         x: tableX,
         y: y - rowH,
@@ -262,6 +278,7 @@ export async function GET(req: Request) {
       y -= rowH;
     };
 
+    // Render
     await drawHeader();
     drawTableHeader();
 
@@ -270,7 +287,7 @@ export async function GET(req: Request) {
     for (const e of expenses) {
       if (y < 140) {
         drawFooter();
-        p = await newPage();
+        p = newPage();
         y = pageH - margin;
         await drawHeader();
         drawTableHeader();
@@ -291,7 +308,7 @@ export async function GET(req: Request) {
     // Totaux par catégorie
     if (y < 240) {
       drawFooter();
-      p = await newPage();
+      p = newPage();
       y = pageH - margin;
       await drawHeader();
     }
@@ -322,7 +339,9 @@ export async function GET(req: Request) {
     p.drawText("TVA", { x: pageW - margin - 70, y: ty, size: 10, font: fontBold, color: slate600 });
     ty -= 14;
 
-    const catsSorted = Array.from(totalsByCategory.entries()).sort((a, b) => catLabel(a[0]).localeCompare(catLabel(b[0])));
+    const catsSorted = Array.from(totalsByCategory.entries()).sort((a, b) =>
+      catLabel(a[0]).localeCompare(catLabel(b[0]))
+    );
 
     for (const [cat, t] of catsSorted) {
       p.drawText(catLabel(cat), { x: margin + 14, y: ty, size: 10, font, color: slate900 });
@@ -358,15 +377,21 @@ export async function GET(req: Request) {
     rightTotal(chfFromCents(vatTotal), pageW - margin - 70 + 52);
 
     drawFooter();
-    const bytes = await pdf2.save(); // Uint8Array
 
-    return new Response(bytes, {
+    // ✅ IMPORTANT: Response n'accepte pas Uint8Array (TS), donc on renvoie un ArrayBuffer “propre”
+    const bytes = await pdf.save(); // Uint8Array
+    const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength); // ArrayBuffer
+
+    return new Response(body, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="depenses-${year}.pdf"`,
       },
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Erreur PDF" }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Erreur PDF" },
+      { status: 500 }
+    );
   }
 }
