@@ -1,71 +1,63 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-function toDate(value: string) {
-  const d = new Date(value + "T00:00:00.000Z");
-  if (Number.isNaN(d.getTime())) throw new Error("Date invalide");
-  return d;
-}
-
-function toNumber(value: string) {
-  const n = Number(String(value || "").replace(",", "."));
-  if (!Number.isFinite(n)) throw new Error("Nombre invalide");
-  return n;
-}
+export const runtime = "nodejs";
 
 function round2(n: number) {
-  return Math.round(n * 100) / 100;
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
+function parseNumber(v: any, def = 0) {
+  const n = typeof v === "number" ? v : Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : def;
+}
+
+function parseDateOrNull(v: any): Date | null {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const clientId = String(body.clientId || "").trim();
-    const number = String(body.number || "").trim();
-    const issueDateStr = String(body.issueDate || "").trim();
-    const dueDateStr = String(body.dueDate || "").trim();
-    const totalTtcStr = String(body.totalTtc || "").trim();
-    const tvaRateStr = String(body.tvaRate ?? "0").trim();
+    const supplierId = String(body?.supplierId ?? "");
+    if (!supplierId) {
+      return NextResponse.json({ error: "supplierId manquant" }, { status: 400 });
+    }
 
-    if (!clientId) throw new Error("clientId manquant");
-    if (!number) throw new Error("Numéro de facture manquant");
-    if (!issueDateStr) throw new Error("Date de facturation manquante");
-    if (!totalTtcStr) throw new Error("Montant TTC manquant");
+    const number = String(body?.number ?? "").trim();
+    if (!number) {
+      return NextResponse.json({ error: "number manquant" }, { status: 400 });
+    }
 
-    const issueDate = toDate(issueDateStr);
-    const dueDate = dueDateStr ? toDate(dueDateStr) : null;
+    const issueDate = parseDateOrNull(body?.issueDate) ?? new Date(); // obligatoire -> fallback aujourd’hui
+    const dueDate = parseDateOrNull(body?.dueDate); // optionnel
 
-    const totalTtc = toNumber(totalTtcStr);
-    const tvaRate = toNumber(tvaRateStr);
-
-    if (totalTtc <= 0) throw new Error("Montant TTC invalide");
-    if (tvaRate < 0) throw new Error("TVA invalide");
+    const totalTtc = parseNumber(body?.totalTtc, 0);
+    const tvaRate = parseNumber(body?.tvaRate, 0);
 
     const ht = tvaRate > 0 ? totalTtc / (1 + tvaRate / 100) : totalTtc;
     const tva = totalTtc - ht;
 
-    const amountGrossCents = Math.round(totalTtc * 100);
-
-    const invoice = await prisma.invoice.create({
+    const created = await prisma.invoice.create({
       data: {
-        clientId,
+        supplierId,
         number,
         issueDate,
-        dueDate: dueDate ?? undefined,
+        ...(dueDate ? { dueDate } : {}), // ✅ pas de undefined envoyé à Prisma
         totalTtc: round2(totalTtc) as any,
         tvaRate: round2(tvaRate) as any,
         totalHt: round2(ht) as any,
         totalTva: round2(tva) as any,
-        amountGrossCents,
+        status: String(body?.status ?? "OPEN"),
+        note: body?.note ? String(body.note) : null,
       },
     });
 
-    return NextResponse.json({ ok: true, invoiceId: invoice.id });
+    return NextResponse.json({ ok: true, invoice: created }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Erreur inconnue" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: e?.message || "Erreur création facture" }, { status: 500 });
   }
 }
