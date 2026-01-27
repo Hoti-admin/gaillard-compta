@@ -12,22 +12,27 @@ function parseDateOrNull(v: any): Date | null {
 
 function parseInvoiceStatus(v: any): InvoiceStatus {
   const s = String(v ?? "").toUpperCase().trim();
-
-  const allowed: InvoiceStatus[] = [
-    InvoiceStatus.OPEN,
-    InvoiceStatus.PAID,
-    InvoiceStatus.CANCELED, // ✅ (pas CANCELLED)
-  ];
-
+  const allowed: InvoiceStatus[] = [InvoiceStatus.OPEN, InvoiceStatus.PAID, InvoiceStatus.CANCELED];
   return allowed.includes(s as InvoiceStatus) ? (s as InvoiceStatus) : InvoiceStatus.OPEN;
+}
+
+// "120.50" -> 12050
+function toCents(v: any): number {
+  if (v == null || v === "") return 0;
+  if (typeof v === "number" && Number.isFinite(v)) return Math.round(v);
+
+  const s = String(v).replace(/\s/g, "").replace(",", ".");
+  const n = Number(s);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100);
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // ✅ Invoice = facture CLIENT
-    // On accepte clientId (normal) OU supplierId (si ton front n'est pas encore corrigé)
+    // ✅ facture client: clientId
+    // fallback si tu envoies encore supplierId côté front
     const clientId = String(body?.clientId ?? body?.supplierId ?? "").trim();
     if (!clientId) {
       return NextResponse.json({ error: "clientId manquant" }, { status: 400 });
@@ -38,27 +43,53 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "number manquant" }, { status: 400 });
     }
 
-    const issueDate = parseDateOrNull(body?.issueDate) ?? new Date(); // obligatoire
-    const dueDate = parseDateOrNull(body?.dueDate); // optionnel
+    const issueDate = parseDateOrNull(body?.issueDate) ?? new Date();
+    const dueDate = parseDateOrNull(body?.dueDate);
 
     const status = parseInvoiceStatus(body?.status);
 
-    // ✅ Prisma: champ = "notes" (pas "note")
+    // ✅ Prisma: "notes" (pas "note")
     const notes =
       body?.notes != null ? String(body.notes) :
       body?.note != null ? String(body.note) :
-      null;
+      undefined;
+
+    // ✅ Champs requis par Prisma
+    const amountGrossCents =
+      body?.amountGrossCents != null ? toCents(body.amountGrossCents) :
+      body?.amountGross != null ? toCents(body.amountGross) :
+      body?.totalTtc != null ? toCents(body.totalTtc) :
+      0;
+
+    const amountNetCents =
+      body?.amountNetCents != null ? toCents(body.amountNetCents) :
+      body?.amountNet != null ? toCents(body.amountNet) :
+      body?.totalHt != null ? toCents(body.totalHt) :
+      body?.totalHT != null ? toCents(body.totalHT) :
+      0;
+
+    let amountVatCents =
+      body?.amountVatCents != null ? toCents(body.amountVatCents) :
+      body?.amountVat != null ? toCents(body.amountVat) :
+      body?.totalTva != null ? toCents(body.totalTva) :
+      0;
+
+    // calc TVA si manquante mais TTC & HT présents
+    if (amountVatCents === 0 && amountGrossCents > 0 && amountNetCents > 0) {
+      amountVatCents = Math.max(0, amountGrossCents - amountNetCents);
+    }
 
     const created = await prisma.invoice.create({
       data: {
-        // ✅ SI ton modèle Invoice a bien clientId
         clientId,
-
         number,
         issueDate,
         ...(dueDate ? { dueDate } : {}),
         status,
         ...(notes ? { notes } : {}),
+        amountGrossCents,
+        amountNetCents,
+        amountVatCents,
       },
     });
 
