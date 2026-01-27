@@ -124,9 +124,9 @@ export async function GET(req: Request) {
 
     const pages: any[] = [];
     const newPage = () => {
-      const p = pdf.addPage([pageW, pageH]);
-      pages.push(p);
-      return p;
+      const page = pdf.addPage([pageW, pageH]);
+      pages.push(page);
+      return page;
     };
 
     let p = newPage();
@@ -167,7 +167,7 @@ export async function GET(req: Request) {
             });
           }
         } catch {
-          // ignore logo errors
+          // ignore
         }
       } else {
         p.drawRectangle({
@@ -186,6 +186,7 @@ export async function GET(req: Request) {
         font: fontBold,
         color: slate900,
       });
+
       p.drawText(`Année ${year} · Montants en CHF`, {
         x: margin + 120,
         y: y - 48,
@@ -205,9 +206,11 @@ export async function GET(req: Request) {
         font,
         color: slate600,
       });
+
       const pageNo = pages.length;
       const txt = `Page ${pageNo}`;
       const tw = font.widthOfTextAtSize(txt, 9);
+
       p.drawText(txt, {
         x: pageW - margin - tw,
         y: 28,
@@ -378,9 +381,9 @@ export async function GET(req: Request) {
 
     drawFooter();
 
-    // ✅ IMPORTANT: Response n'accepte pas Uint8Array (TS), donc on renvoie un ArrayBuffer “propre”
+    // ✅ Fix TS/Vercel: renvoyer un Buffer (BodyInit OK)
     const bytes = await pdf.save(); // Uint8Array
-    const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength); // ArrayBuffer
+    const body = Buffer.from(bytes);
 
     return new Response(body, {
       headers: {
@@ -389,9 +392,6 @@ export async function GET(req: Request) {
       },
     });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Erreur PDF" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Erreur PDF" }, { status: 500 });
   }
 }
