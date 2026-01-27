@@ -24,16 +24,31 @@ export function PageTitle({
     </div>
   );
 }
-
-export function Card({ title, children }: { title?: ReactNode; children: ReactNode }) {
+export function Card({
+  title,
+  subtitle,
+  right,
+  className,
+  children,
+}: {
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  right?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      {title ? (
-        <div className="mb-5 flex items-center justify-between">
-          <div className="text-sm font-semibold text-slate-800">{title}</div>
-          <div className="ml-4 h-px flex-1 bg-slate-100" />
+    <div className={"rounded-3xl border border-slate-200 bg-white p-6 shadow-sm " + (className || "")}>
+      {(title || subtitle || right) ? (
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            {title ? <div className="text-sm font-semibold text-slate-800">{title}</div> : null}
+            {subtitle ? <div className="mt-1 text-sm text-slate-600">{subtitle}</div> : null}
+          </div>
+          {right ? <div className="shrink-0">{right}</div> : <div className="ml-4 h-px flex-1 bg-slate-100" />}
         </div>
       ) : null}
+
       {children}
     </div>
   );
