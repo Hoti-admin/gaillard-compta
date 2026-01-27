@@ -5,50 +5,63 @@ export function Container({ children }: { children: ReactNode }) {
   return <div className="mx-auto w-full max-w-6xl px-4 py-10 md:px-6">{children}</div>;
 }
 
+/**
+ * ✅ PageTitle
+ * - supporte <PageTitle title="..." />
+ * - supporte aussi <PageTitle>...</PageTitle>
+ */
 export function PageTitle({
   title,
   subtitle,
   right,
+  children,
 }: {
-  title: string;
+  title?: string;
   subtitle?: string;
   right?: ReactNode;
+  children?: ReactNode;
 }) {
+  const finalTitle =
+    title ??
+    (typeof children === "string" ? children : Array.isArray(children) ? "" : (children as any) ? "" : "");
+
   return (
     <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
       <div>
-        <div className="text-3xl font-extrabold tracking-tight text-slate-900">{title}</div>
+        <div className="text-3xl font-extrabold tracking-tight text-slate-900">{finalTitle}</div>
         {subtitle ? <div className="mt-2 text-sm text-slate-600">{subtitle}</div> : null}
       </div>
       {right ? <div className="flex items-center gap-2">{right}</div> : null}
     </div>
   );
 }
+
+/**
+ * ✅ Card
+ * - accepte title, subtitle, className
+ */
 export function Card({
   title,
   subtitle,
-  right,
   className,
   children,
 }: {
   title?: ReactNode;
   subtitle?: ReactNode;
-  right?: ReactNode;
   className?: string;
   children: ReactNode;
 }) {
   return (
     <div className={"rounded-3xl border border-slate-200 bg-white p-6 shadow-sm " + (className || "")}>
-      {(title || subtitle || right) ? (
-        <div className="mb-5 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            {title ? <div className="text-sm font-semibold text-slate-800">{title}</div> : null}
-            {subtitle ? <div className="mt-1 text-sm text-slate-600">{subtitle}</div> : null}
+      {title || subtitle ? (
+        <div className="mb-5">
+          <div className="flex items-center justify-between">
+            {title ? <div className="text-sm font-semibold text-slate-800">{title}</div> : <div />}
+            <div className="ml-4 h-px flex-1 bg-slate-100" />
           </div>
-          {right ? <div className="shrink-0">{right}</div> : <div className="ml-4 h-px flex-1 bg-slate-100" />}
+          {subtitle ? <div className="mt-2 text-xs text-slate-600">{subtitle}</div> : null}
         </div>
       ) : null}
-
       {children}
     </div>
   );
@@ -153,7 +166,7 @@ export function A({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-export function Table({ headers, rows }: { headers: string[]; rows: (ReactNode[])[] }) {
+export function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   return (
     <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white">
       <table className="w-full text-left text-sm">
