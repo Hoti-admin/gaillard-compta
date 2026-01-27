@@ -16,7 +16,7 @@ function parseInvoiceStatus(v: any): InvoiceStatus {
   const allowed: InvoiceStatus[] = [
     InvoiceStatus.OPEN,
     InvoiceStatus.PAID,
-    InvoiceStatus.CANCELED,
+    InvoiceStatus.CANCELED, // ✅ (pas CANCELLED)
   ];
 
   return allowed.includes(s as InvoiceStatus) ? (s as InvoiceStatus) : InvoiceStatus.OPEN;
@@ -26,9 +26,11 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const supplierId = String(body?.supplierId ?? "").trim();
-    if (!supplierId) {
-      return NextResponse.json({ error: "supplierId manquant" }, { status: 400 });
+    // ✅ Invoice = facture CLIENT
+    // On accepte clientId (normal) OU supplierId (si ton front n'est pas encore corrigé)
+    const clientId = String(body?.clientId ?? body?.supplierId ?? "").trim();
+    if (!clientId) {
+      return NextResponse.json({ error: "clientId manquant" }, { status: 400 });
     }
 
     const number = String(body?.number ?? "").trim();
@@ -36,24 +38,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "number manquant" }, { status: 400 });
     }
 
-    // Dates
     const issueDate = parseDateOrNull(body?.issueDate) ?? new Date(); // obligatoire
     const dueDate = parseDateOrNull(body?.dueDate); // optionnel
 
-    // Status enum
     const status = parseInvoiceStatus(body?.status);
 
     // ✅ Prisma: champ = "notes" (pas "note")
-    const notes = body?.note ? String(body.note) : body?.notes ? String(body.notes) : null;
+    const notes =
+      body?.notes != null ? String(body.notes) :
+      body?.note != null ? String(body.note) :
+      null;
 
     const created = await prisma.invoice.create({
       data: {
-        supplierId,
+        // ✅ SI ton modèle Invoice a bien clientId
+        clientId,
+
         number,
         issueDate,
         ...(dueDate ? { dueDate } : {}),
         status,
-        ...(notes ? { notes } : {}), // ✅ pas de champ si vide
+        ...(notes ? { notes } : {}),
       },
     });
 
