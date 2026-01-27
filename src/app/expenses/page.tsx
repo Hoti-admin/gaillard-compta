@@ -77,11 +77,13 @@ export default async function ExpensesPage({ searchParams }: PageProps) {
 
         <div className="flex items-center gap-2">
           <form className="flex items-center gap-2">
-            <Select
-              name="year"
-              defaultValue={String(year)}
-              options={[String(currentYear - 1), String(currentYear), String(currentYear + 1)]}
-            />
+           <Select name="year" defaultValue={String(year)}>
+  {[currentYear - 1, currentYear, currentYear + 1].map((y) => (
+    <option key={y} value={String(y)}>
+      {y}
+    </option>
+  ))}
+</Select>
             <Button type="submit">Afficher</Button>
           </form>
 
