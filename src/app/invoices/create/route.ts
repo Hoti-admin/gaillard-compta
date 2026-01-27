@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { InvoiceStatus } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,19 @@ function parseDateOrNull(v: any): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function parseInvoiceStatus(v: any): InvoiceStatus {
+  const s = String(v ?? "").toUpperCase().trim();
+
+  // ✅ adapte ici si ton enum a d’autres valeurs
+  const allowed: InvoiceStatus[] = [
+    InvoiceStatus.OPEN,
+    InvoiceStatus.PAID,
+    InvoiceStatus.CANCELLED,
+  ];
+
+  return (allowed.includes(s as InvoiceStatus) ? (s as InvoiceStatus) : InvoiceStatus.OPEN);
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -32,7 +46,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "number manquant" }, { status: 400 });
     }
 
-    const issueDate = parseDateOrNull(body?.issueDate) ?? new Date(); // obligatoire -> fallback aujourd’hui
+    const issueDate = parseDateOrNull(body?.issueDate) ?? new Date(); // obligatoire
     const dueDate = parseDateOrNull(body?.dueDate); // optionnel
 
     const totalTtc = parseNumber(body?.totalTtc, 0);
@@ -41,17 +55,19 @@ export async function POST(req: Request) {
     const ht = tvaRate > 0 ? totalTtc / (1 + tvaRate / 100) : totalTtc;
     const tva = totalTtc - ht;
 
+    const status = parseInvoiceStatus(body?.status);
+
     const created = await prisma.invoice.create({
       data: {
         supplierId,
         number,
         issueDate,
-        ...(dueDate ? { dueDate } : {}), // ✅ pas de undefined envoyé à Prisma
+        ...(dueDate ? { dueDate } : {}), // ✅ pas de undefined
         totalTtc: round2(totalTtc) as any,
         tvaRate: round2(tvaRate) as any,
         totalHt: round2(ht) as any,
         totalTva: round2(tva) as any,
-        status: String(body?.status ?? "OPEN"),
+        status, // ✅ enum Prisma
         note: body?.note ? String(body.note) : null,
       },
     });
