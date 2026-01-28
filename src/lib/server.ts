@@ -1,23 +1,28 @@
-import { cookies } from "next/headers";
+import "server-only";
+
 import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
-export function supabaseServer() {
-  const cookieStore = cookies();
-
+export function createSupabaseServerClient() {
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
+        async getAll() {
+          const cookieStore = await cookies();
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
+        async setAll(cookiesToSet) {
+          const cookieStore = await cookies();
           try {
-            cookiesToSet.forEach(({ name, value, options }) => {
+            for (const { name, value, options } of cookiesToSet) {
               cookieStore.set(name, value, options);
-            });
-          } catch {}
+            }
+          } catch {
+            // Si on est dans un Server Component sans accès à set(),
+            // Next peut thrower: on ignore et Supabase gère via middleware/route.
+          }
         },
       },
     }
