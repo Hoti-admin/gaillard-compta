@@ -19,7 +19,14 @@ function parseInvoiceStatus(v: any): InvoiceStatus {
 // "120.50" -> 12050
 function toCents(v: any): number {
   if (v == null || v === "") return 0;
-  if (typeof v === "number" && Number.isFinite(v)) return Math.round(v);
+
+  // si déjà en cents
+  if (typeof v === "number" && Number.isFinite(v)) {
+    // si tu passes 12050 directement
+    if (Number.isInteger(v) && v > 1000) return v;
+    // sinon on suppose CHF
+    return Math.round(v * 100);
+  }
 
   const s = String(v).replace(/\s/g, "").replace(",", ".");
   const n = Number(s);
@@ -32,7 +39,7 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     // ✅ facture client: clientId
-    // fallback si tu envoies encore supplierId côté front
+    // fallback si encore supplierId côté front
     const clientId = String(body?.clientId ?? body?.supplierId ?? "").trim();
     if (!clientId) {
       return NextResponse.json({ error: "clientId manquant" }, { status: 400 });
@@ -44,7 +51,7 @@ export async function POST(req: Request) {
     }
 
     const issueDate = parseDateOrNull(body?.issueDate) ?? new Date();
-    const dueDate = parseDateOrNull(body?.dueDate);
+    const dueDate = parseDateOrNull(body?.dueDate); // Date | null
 
     const status = parseInvoiceStatus(body?.status);
 
@@ -54,7 +61,7 @@ export async function POST(req: Request) {
       body?.note != null ? String(body.note) :
       undefined;
 
-    // ✅ Champs requis par Prisma
+    // ✅ Champs requis
     const amountGrossCents =
       body?.amountGrossCents != null ? toCents(body.amountGrossCents) :
       body?.amountGross != null ? toCents(body.amountGross) :
@@ -79,19 +86,21 @@ export async function POST(req: Request) {
       amountVatCents = Math.max(0, amountGrossCents - amountNetCents);
     }
 
-    const created = await prisma.invoice.create({
-      data: {
-        clientId,
-        number,
-        issueDate,
-        ...(dueDate ? { dueDate } : {}),
-        status,
-        ...(notes ? { notes } : {}),
-        amountGrossCents,
-        amountNetCents,
-        amountVatCents,
-      },
-    });
+    // ✅ IMPORTANT: construire l'objet puis ajouter dueDate uniquement si présent
+    const data: any = {
+      clientId,
+      number,
+      issueDate,
+      status,
+      amountGrossCents,
+      amountNetCents,
+      amountVatCents,
+    };
+
+    if (dueDate) data.dueDate = dueDate;
+    if (notes) data.notes = notes;
+
+    const created = await prisma.invoice.create({ data });
 
     return NextResponse.json({ ok: true, invoice: created }, { status: 201 });
   } catch (e: any) {
