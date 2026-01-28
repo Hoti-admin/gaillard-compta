@@ -1,88 +1,78 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-// Routes publiques (accessibles sans login)
-const PUBLIC_ROUTES = new Set<string>(["/login"]);
-
-// Prefixes à ignorer (assets, API, etc.)
-const PUBLIC_PREFIXES = [
-  "/_next",
+const PUBLIC_PATHS = [
+  "/login",
+  "/auth/callback",
   "/favicon.ico",
-  "/api", // on laisse toutes les routes API passer (si tu veux protéger certaines API, on le fera plus tard)
-  "/public",
+  "/robots.txt",
+  "/sitemap.xml",
 ];
 
-function isPublic(pathname: string) {
-  if (PUBLIC_ROUTES.has(pathname)) return true;
-  return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p));
-}
-
-function normalizeEmails(value: string | undefined) {
-  return (value || "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
+function isPublicPath(pathname: string) {
+  if (PUBLIC_PATHS.includes(pathname)) return true;
+  if (pathname.startsWith("/_next")) return true;
+  if (pathname.startsWith("/assets")) return true;
+  if (pathname.startsWith("/images")) return true;
+  return false;
 }
 
 export async function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
-  // 1) Laisser passer tout ce qui est public
-  if (isPublic(pathname)) return NextResponse.next();
-
-  // 2) Préparer la réponse (pour pouvoir écrire des cookies si besoin)
-  const res = NextResponse.next();
-
-  // 3) Supabase server client via cookies request/response
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  // Sécurité : si env manquantes, on bloque proprement
-  if (!supabaseUrl || !supabaseAnon) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("error", "missing_env");
-    return NextResponse.redirect(url);
+  // Laisse passer les routes publiques
+  if (isPublicPath(pathname)) {
+    return NextResponse.next();
   }
 
-  const supabase = createServerClient(supabaseUrl, supabaseAnon, {
-    cookies: {
-      getAll: () => req.cookies.getAll(),
-      setAll: (cookiesToSet) => {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          res.cookies.set(name, value, options);
-        });
+  // Prépare une réponse modifiable (cookies)
+  let res = NextResponse.next();
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            res.cookies.set(name, value, options);
+          });
+        },
       },
-    },
-  });
+    }
+  );
 
-  // 4) Lire utilisateur
-  const { data } = await supabase.auth.getUser();
-  const user = data.user;
+  // 1) Vérifie session
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  // 5) Non connecté -> /login?next=...
   if (!user) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("next", pathname + (search || ""));
-    return NextResponse.redirect(url);
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("next", pathname + (search || ""));
+    return NextResponse.redirect(loginUrl);
   }
 
-  // 6) Check admin allowlist
-  const admins = normalizeEmails(process.env.ADMIN_EMAILS);
-  const email = (user.email || "").toLowerCase();
+  // 2) Vérifie rôle admin depuis profiles
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
 
-  if (admins.length > 0 && !admins.includes(email)) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("error", "not_admin");
-    return NextResponse.redirect(url);
+  if (error || !profile || profile.role !== "admin") {
+    const loginUrl = new URL("/login", req.url);
+    loginUrl.searchParams.set("error", "Accès refusé (admin requis).");
+    loginUrl.searchParams.set("next", pathname + (search || ""));
+    return NextResponse.redirect(loginUrl);
   }
 
   return res;
 }
 
-// matcher pro : protège tout sauf assets Next
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
