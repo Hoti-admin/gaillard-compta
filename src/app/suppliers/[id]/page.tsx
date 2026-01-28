@@ -13,6 +13,12 @@ function safeString(v: any) {
   return String(v ?? "").trim();
 }
 
+function parseNumberLoose(v: any) {
+  const s = String(v ?? "").replace(",", ".").trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default async function SupplierDetailPage({ params }: PageProps) {
   const resolved = await Promise.resolve(params);
   const id = resolved.id;
@@ -37,8 +43,33 @@ export default async function SupplierDetailPage({ params }: PageProps) {
     );
   }
 
-  // ✅ IMPORTANT : ton modèle Bill n'a pas de champ "date"
-  // Donc on trie par createdAt (qui existe toujours dans ton modèle)
+  // ✅ Wrapper Server Action compatible <form action={...}>
+  async function createBillAction(formData: FormData) {
+    "use server";
+
+    const supplierId = String(formData.get("supplierId") || "");
+    const number = safeString(formData.get("number")) || null;
+
+    const issueDate = String(formData.get("issueDate") || "");
+    const dueDate = String(formData.get("dueDate") || "");
+
+    const totalTtc = parseNumberLoose(formData.get("totalTtc")); // CHF
+    const vatRateBp = Number(formData.get("vatRateBp") || 810); // basis points: 810 = 8.10%
+
+    const notes = safeString(formData.get("notes")) || null;
+
+    await createBillForSupplier({
+      supplierId,
+      number,
+      issueDate,
+      dueDate,
+      totalTtc,
+      vatRateBp: Number.isFinite(vatRateBp) ? vatRateBp : 810,
+      notes,
+    });
+  }
+
+  // ✅ Ton modèle Bill n'a pas de champ "date" => tri par createdAt
   const bills = await prisma.bill.findMany({
     where: { supplierId: supplier.id },
     orderBy: [{ createdAt: "desc" }],
@@ -48,9 +79,13 @@ export default async function SupplierDetailPage({ params }: PageProps) {
     const isPaid = Boolean((b as any).paid);
     const badge = isPaid ? <Badge tone="success">Payée</Badge> : <Badge tone="warning">Ouverte</Badge>;
 
-    // ✅ Affichage date: on essaie d'abord un champ "date" si jamais il existe dans certains environnements
-    // sinon createdAt
-    const displayDate = (b as any).date ? new Date((b as any).date) : new Date((b as any).createdAt);
+    const displayDate = (b as any).issueDate
+      ? new Date((b as any).issueDate)
+      : (b as any).date
+      ? new Date((b as any).date)
+      : new Date((b as any).createdAt);
+
+    const total = Number((b as any).amountGrossCents || (b as any).totalTtcCents || 0);
 
     return [
       <span key="d" className="whitespace-nowrap">
@@ -60,11 +95,14 @@ export default async function SupplierDetailPage({ params }: PageProps) {
         {safeString((b as any).number || "—")}
       </span>,
       <span key="t" className="whitespace-nowrap">
-        {chf(Number((b as any).amountGrossCents || 0))}
+        {chf(total)}
       </span>,
       badge,
     ];
   });
+
+  const today = isoDate(new Date());
+  const in30 = isoDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
 
   return (
     <Container>
@@ -81,44 +119,51 @@ export default async function SupplierDetailPage({ params }: PageProps) {
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-1">
           <Card title="Nouvelle facture fournisseur">
-            <form action={createBillForSupplier} className="mt-3 grid gap-3">
+            <form action={createBillAction} className="mt-3 grid gap-3">
               <input type="hidden" name="supplierId" value={supplier.id} />
 
               <div>
-                <div className="mb-1 text-xs font-semibold text-slate-600">N° facture</div>
+                <div className="mb-1 text-xs font-semibold text-slate-600">N° facture (optionnel)</div>
                 <Input name="number" placeholder="ex: 2026-001" />
               </div>
 
-              <div>
-                <div className="mb-1 text-xs font-semibold text-slate-600">Date</div>
-                <Input name="date" type="date" defaultValue={isoDate(new Date())} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="mb-1 text-xs font-semibold text-slate-600">Date facture</div>
+                  <Input name="issueDate" type="date" defaultValue={today} required />
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-semibold text-slate-600">Échéance</div>
+                  <Input name="dueDate" type="date" defaultValue={in30} required />
+                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
-                  <div className="mb-1 text-xs font-semibold text-slate-600">Montant TTC (CHF)</div>
-                  <Input name="amountGross" placeholder="ex: 120.50" />
+                  <div className="mb-1 text-xs font-semibold text-slate-600">Total TTC (CHF)</div>
+                  <Input name="totalTtc" placeholder="ex: 120.50" required />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs font-semibold text-slate-600">TVA</div>
-                  <Select name="vatRate" defaultValue="8.1">
+                  {/* vatRateBp = basis points (8.1% = 810) */}
+                  <Select name="vatRateBp" defaultValue="810">
                     <option value="0">0%</option>
-                    <option value="2.6">2.6%</option>
-                    <option value="8.1">8.1%</option>
+                    <option value="260">2.6%</option>
+                    <option value="810">8.1%</option>
                   </Select>
                 </div>
               </div>
 
               <div>
-                <div className="mb-1 text-xs font-semibold text-slate-600">Note (optionnel)</div>
-                <Input name="note" placeholder="ex: Peinture, matériel, etc." />
+                <div className="mb-1 text-xs font-semibold text-slate-600">Notes (optionnel)</div>
+                <Input name="notes" placeholder="ex: Peinture, matériel, etc." />
               </div>
 
               <Button type="submit">Créer la facture</Button>
 
               <div className="text-xs text-slate-500">
-                Astuce: tu peux saisir le TTC seulement, le HT/TVA seront calculés côté serveur selon le taux.
+                Si tu veux, on pourra ensuite calculer HT/TVA côté serveur selon le taux choisi.
               </div>
             </form>
           </Card>
