@@ -37,18 +37,24 @@ export default async function SupplierDetailPage({ params }: PageProps) {
     );
   }
 
+  // ✅ IMPORTANT : ton modèle Bill n'a pas de champ "date"
+  // Donc on trie par createdAt (qui existe toujours dans ton modèle)
   const bills = await prisma.bill.findMany({
     where: { supplierId: supplier.id },
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    orderBy: [{ createdAt: "desc" }],
   });
 
   const rows = bills.map((b) => {
     const isPaid = Boolean((b as any).paid);
     const badge = isPaid ? <Badge tone="success">Payée</Badge> : <Badge tone="warning">Ouverte</Badge>;
 
+    // ✅ Affichage date: on essaie d'abord un champ "date" si jamais il existe dans certains environnements
+    // sinon createdAt
+    const displayDate = (b as any).date ? new Date((b as any).date) : new Date((b as any).createdAt);
+
     return [
       <span key="d" className="whitespace-nowrap">
-        {isoDate(new Date((b as any).date))}
+        {isoDate(displayDate)}
       </span>,
       <span key="n" className="font-semibold">
         {safeString((b as any).number || "—")}
@@ -96,7 +102,6 @@ export default async function SupplierDetailPage({ params }: PageProps) {
 
                 <div>
                   <div className="mb-1 text-xs font-semibold text-slate-600">TVA</div>
-                  {/* ✅ PAS de prop options — on met les <option> dedans */}
                   <Select name="vatRate" defaultValue="8.1">
                     <option value="0">0%</option>
                     <option value="2.6">2.6%</option>
