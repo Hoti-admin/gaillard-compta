@@ -1,162 +1,134 @@
 import { prisma } from "@/lib/prisma";
-import { notFound } from "next/navigation";
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
 import { createBillForSupplier } from "@/app/actions";
 import { chf, isoDate } from "@/lib/utils";
 import { Card, Container, Button, Input, Select, Table, Badge, PageTitle } from "@/components/ui";
 
 type PageProps = {
   params: Promise<{ id: string }> | { id: string };
+  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, any>;
 };
 
-export default async function SupplierDetail(props: PageProps) {
-  const params = await Promise.resolve(props.params);
-  const id = params?.id;
-  if (!id) return notFound();
+function safeString(v: any) {
+  return String(v ?? "").trim();
+}
+
+export default async function SupplierDetailPage({ params }: PageProps) {
+  const resolved = await Promise.resolve(params);
+  const id = resolved.id;
 
   const supplier = await prisma.supplier.findUnique({
     where: { id },
-    include: {
-      bills: { include: { payments: true }, orderBy: { dueDate: "desc" } },
-    },
   });
 
-  if (!supplier) return notFound();
-
-  // ✅ Wrapper "use server" pour convertir FormData -> objet
-  async function createBillAction(formData: FormData) {
-    "use server";
-
-    const supplierId = String(formData.get("supplierId") || "");
-    const number = String(formData.get("number") || "").trim() || null;
-    const issueDate = String(formData.get("issueDate") || "");
-    const dueDate = String(formData.get("dueDate") || "");
-    const totalTtc = Number(String(formData.get("totalTtc") || "0").replace(",", "."));
-    const vatRate = Number(String(formData.get("vatRate") || "8.1").replace(",", "."));
-    const notes = String(formData.get("notes") || "").trim() || null;
-
-    // vatRateBp attendu (810 = 8.1%)
-    const vatRateBp = Math.round(vatRate * 100);
-
-    await createBillForSupplier({
-      supplierId,
-      number,
-      issueDate,
-      dueDate,
-      totalTtc,
-      vatRateBp,
-      notes,
-    });
-
-    revalidatePath(`/suppliers/${supplierId}`);
+  if (!supplier) {
+    return (
+      <Container>
+        <PageTitle title="Fournisseur" subtitle="Introuvable" />
+        <Card title="Erreur">
+          <div className="text-sm text-slate-700">Ce fournisseur n’existe pas.</div>
+          <div className="mt-4">
+            <Link className="text-sm font-semibold text-blue-700 hover:underline" href="/suppliers">
+              ← Retour
+            </Link>
+          </div>
+        </Card>
+      </Container>
+    );
   }
+
+  const bills = await prisma.bill.findMany({
+    where: { supplierId: supplier.id },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+  });
+
+  const rows = bills.map((b) => {
+    const isPaid = Boolean((b as any).paid);
+    const badge = isPaid ? <Badge tone="success">Payée</Badge> : <Badge tone="warning">Ouverte</Badge>;
+
+    return [
+      <span key="d" className="whitespace-nowrap">
+        {isoDate(new Date((b as any).date))}
+      </span>,
+      <span key="n" className="font-semibold">
+        {safeString((b as any).number || "—")}
+      </span>,
+      <span key="t" className="whitespace-nowrap">
+        {chf(Number((b as any).amountGrossCents || 0))}
+      </span>,
+      badge,
+    ];
+  });
 
   return (
     <Container>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <PageTitle title={supplier.name} subtitle="Détail fournisseur + achats" />
-          <div className="mt-1 text-sm text-slate-600">
-            {supplier.email || "—"} · {supplier.phone || "—"}
-          </div>
+      <PageTitle
+        title={supplier.name}
+        subtitle={supplier.email ? supplier.email : supplier.phone ? supplier.phone : "Fournisseur"}
+        right={
+          <Link href="/suppliers" className="text-sm font-semibold text-slate-900 hover:underline">
+            ← Retour
+          </Link>
+        }
+      />
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-1">
+          <Card title="Nouvelle facture fournisseur">
+            <form action={createBillForSupplier} className="mt-3 grid gap-3">
+              <input type="hidden" name="supplierId" value={supplier.id} />
+
+              <div>
+                <div className="mb-1 text-xs font-semibold text-slate-600">N° facture</div>
+                <Input name="number" placeholder="ex: 2026-001" />
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-semibold text-slate-600">Date</div>
+                <Input name="date" type="date" defaultValue={isoDate(new Date())} />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <div className="mb-1 text-xs font-semibold text-slate-600">Montant TTC (CHF)</div>
+                  <Input name="amountGross" placeholder="ex: 120.50" />
+                </div>
+
+                <div>
+                  <div className="mb-1 text-xs font-semibold text-slate-600">TVA</div>
+                  {/* ✅ PAS de prop options — on met les <option> dedans */}
+                  <Select name="vatRate" defaultValue="8.1">
+                    <option value="0">0%</option>
+                    <option value="2.6">2.6%</option>
+                    <option value="8.1">8.1%</option>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-semibold text-slate-600">Note (optionnel)</div>
+                <Input name="note" placeholder="ex: Peinture, matériel, etc." />
+              </div>
+
+              <Button type="submit">Créer la facture</Button>
+
+              <div className="text-xs text-slate-500">
+                Astuce: tu peux saisir le TTC seulement, le HT/TVA seront calculés côté serveur selon le taux.
+              </div>
+            </form>
+          </Card>
         </div>
 
-        <Link
-          href="/suppliers"
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          ← Retour fournisseurs
-        </Link>
+        <div className="lg:col-span-2">
+          <Card title={`Historique (${bills.length})`}>
+            {bills.length === 0 ? (
+              <div className="text-sm text-slate-600">Aucune facture pour le moment.</div>
+            ) : (
+              <Table headers={["Date", "N°", "TTC", "Statut"]} rows={rows} />
+            )}
+          </Card>
+        </div>
       </div>
-
-      {/* ✅ Création achat */}
-      <Card className="mt-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-base font-bold text-slate-900">Nouvel achat</div>
-          <Badge tone="neutral">TVA auto</Badge>
-        </div>
-
-        <form action={createBillAction} className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
-          <input type="hidden" name="supplierId" value={supplier.id} />
-
-          <div className="md:col-span-2">
-            <div className="text-xs font-semibold text-slate-500 mb-1">N° facture</div>
-            <Input name="number" placeholder="optionnel" />
-          </div>
-
-          <div className="md:col-span-2">
-            <div className="text-xs font-semibold text-slate-500 mb-1">Date facture</div>
-            <Input name="issueDate" type="date" defaultValue={isoDate(new Date())} required />
-          </div>
-
-          <div className="md:col-span-2">
-            <div className="text-xs font-semibold text-slate-500 mb-1">Échéance</div>
-            <Input name="dueDate" type="date" required />
-          </div>
-
-          <div className="md:col-span-2">
-            <div className="text-xs font-semibold text-slate-500 mb-1">Montant TTC (CHF)</div>
-            <Input name="totalTtc" type="number" step="0.01" placeholder="0.00" required />
-          </div>
-
-          <div className="md:col-span-2">
-            <div className="text-xs font-semibold text-slate-500 mb-1">TVA %</div>
-            <Select
-              name="vatRate"
-              defaultValue="8.1"
-              options={[
-                { value: "0", label: "0%" },
-                { value: "2.6", label: "2.6%" },
-                { value: "8.1", label: "8.1%" },
-              ]}
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <div className="text-xs font-semibold text-slate-500 mb-1">Notes</div>
-            <Input name="notes" placeholder="optionnel" />
-          </div>
-
-          <div className="md:col-span-6 mt-2 flex gap-2">
-            <Button type="submit">Ajouter</Button>
-          </div>
-        </form>
-      </Card>
-
-      {/* ✅ Liste achats */}
-      <Card className="mt-6">
-        <div className="flex items-center justify-between">
-          <div className="text-base font-bold text-slate-900">Achats</div>
-          <Badge tone="neutral">{supplier.bills.length} pièce(s)</Badge>
-        </div>
-
-        <div className="mt-4 overflow-x-auto">
-          <Table
-            headers={["N°", "Date", "Échéance", "TTC", "Payé", "Solde", "Statut"]}
-            rows={supplier.bills.map((b) => {
-              const paid = b.payments.reduce((s, p) => s + p.amountCents, 0) / 100;
-              const total = b.amountGrossCents / 100;
-              const balance = total - paid;
-
-              const tone = balance <= 0 ? "success" : paid > 0 ? "warning" : "danger";
-              const label = balance <= 0 ? "PAID" : paid > 0 ? "PARTIAL" : "OPEN";
-
-              return [
-                b.number || "—",
-                isoDate(b.issueDate),
-                isoDate(b.dueDate),
-                chf(total),
-                chf(paid),
-                chf(balance),
-                <Badge key={b.id} tone={tone as any}>
-                  {label}
-                </Badge>,
-              ];
-            })}
-          />
-        </div>
-      </Card>
     </Container>
   );
 }
