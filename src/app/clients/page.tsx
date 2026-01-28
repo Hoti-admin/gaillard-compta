@@ -83,11 +83,11 @@ export default async function ClientsPage(props: PageProps) {
 
       {/* Créer client */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card
-          title="Nouveau client"
-          subtitle="Ajoute un client (nom obligatoire)."
-          className="lg:col-span-1"
-        >
+        <Card title="Nouveau client" className="lg:col-span-1">
+          
+  <p className="text-sm text-muted-foreground">
+    Ajoute un client (nom obligatoire).
+  </p>
           <form action={createClient} className="mt-3 grid gap-3">
             <div>
               <label className="mb-1 block text-xs font-bold text-slate-600">Nom *</label>
