@@ -23,11 +23,7 @@ model Client {
   name      String
   email     String?
   phone     String?
-  address   String?paidAt 
-  DateTime?
-  paidAmountCents  Int?
-  discountRateBp   Int?
-  discountCents    Int?
+  address   String?
   createdAt DateTime @default(now())
 
   invoices Invoice[]
@@ -57,6 +53,12 @@ model Invoice {
   notes     String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
+
+  // ✅ Paiement direct (si tu ne veux pas forcément créer une ligne Payment)
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  discountRateBp   Int? // ex: 200 = 2.00%
+  discountCents    Int? // montant déduit en cents
 
   payments Payment[]
 
