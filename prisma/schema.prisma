@@ -3,7 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum InvoiceStatus {
@@ -53,12 +55,6 @@ model Invoice {
   notes     String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
-
-  // ✅ Paiement direct (si tu ne veux pas forcément créer une ligne Payment)
-  paidAt           DateTime?
-  paidAmountCents  Int?
-  discountRateBp   Int? // ex: 200 = 2.00%
-  discountCents    Int? // montant déduit en cents
 
   payments Payment[]
 
@@ -130,7 +126,7 @@ model BillPayment {
   id String @id @default(cuid())
 
   billId String
-  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+  bill   Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
   date        DateTime
   amountCents Int
@@ -158,16 +154,16 @@ model Expense {
   id String @id @default(cuid())
 
   date     DateTime
-  vendor   String // ex: "Restaurant XX", "Parking", "Coop", etc.
+  vendor   String
   category ExpenseCategory
 
   // TVA
-  vatRateBp        Int @default(810) // 810 = 8.10%
-  amountGrossCents Int // TTC
-  amountNetCents   Int // HT
-  amountVatCents   Int // TVA
+  vatRateBp        Int @default(810)
+  amountGrossCents Int
+  amountNetCents   Int
+  amountVatCents   Int
 
-  receiptPath String? // PDF/photo reçu (optionnel)
+  receiptPath String?
   notes       String?
 
   createdAt DateTime @default(now())
