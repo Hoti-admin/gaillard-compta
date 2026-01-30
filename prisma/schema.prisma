@@ -171,3 +171,13 @@ model Expense {
   @@index([category])
   @@index([vendor])
 }
+model Invoice {
+  id               String   @id @default(uuid())
+  // ... tes champs existants ...
+
+  status           InvoiceStatus @default(OPEN)
+  paidAt           DateTime?
+  paidAmountCents  Int?        // montant réellement payé (TTC) en centimes
+  discountRateBp   Int?        // ex: 200 = 2.00% (basis points)
+  discountCents    Int?        // montant d’escompte appliqué en centimes
+}
