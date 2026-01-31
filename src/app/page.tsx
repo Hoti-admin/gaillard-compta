@@ -1,135 +1,184 @@
 import { prisma } from "@/lib/prisma";
-import { chf, daysLate, sumPaidCents } from "@/lib/utils";
-import { Container, PageTitle, Stat, Card, Table, A, Badge, Select, ButtonGhost } from "@/components/ui";
 
-export default async function Home({
-  searchParams,
-}: {
-  searchParams?: Promise<{ year?: string }>;
-}) {
-  const sp = searchParams ? await searchParams : {};
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const year = Number(sp.year || currentYear);
+export const dynamic = "force-dynamic";
 
-  const from = new Date(`${year}-01-01T00:00:00.000Z`);
-  const to = new Date(`${year + 1}-01-01T00:00:00.000Z`);
+function chf(cents: number) {
+  return `${(cents / 100).toFixed(2)} CHF`;
+}
 
-  // Factures (toutes pour les retards)
-  const invoicesAll = await prisma.invoice.findMany({
-    where: { status: { not: "CANCELED" } },
-    include: { client: true, payments: true },
-    orderBy: { dueDate: "asc" },
-    take: 5000,
+function daysBetween(a: Date, b: Date) {
+  const ms = a.getTime() - b.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
+
+export default async function DashboardPage(props: { searchParams?: Promise<any> }) {
+  const sp = (await props.searchParams) ?? {};
+  const year = Number(sp.year ?? new Date().getFullYear());
+
+  const yearStart = new Date(`${year}-01-01T00:00:00.000Z`);
+  const yearEnd = new Date(`${year + 1}-01-01T00:00:00.000Z`);
+  const today = new Date();
+
+  // =========================
+  // 1) FACTURES (année)
+  // =========================
+
+  // Toutes les factures de l’année (hors annulées)
+  const invoices = await prisma.invoice.findMany({
+    where: {
+      issueDate: { gte: yearStart, lt: yearEnd },
+      status: { not: "CANCELED" },
+    },
+    select: {
+      id: true,
+      status: true,
+      dueDate: true,
+      amountGrossCents: true,
+      amountVatCents: true,
+      paidAmountCents: true, // si paiement avec escompte / montant perso
+    },
   });
 
-  // Factures de l'année (pour CA)
-  const invoicesYear = invoicesAll.filter((i) => i.issueDate >= from && i.issueDate < to);
+  const totalFactureCents = invoices.reduce((s, inv) => s + inv.amountGrossCents, 0);
 
-  const invRows = invoicesAll.map((i) => {
-    const paid = sumPaidCents(i.payments);
-    const outstanding = Math.max(0, i.amountGrossCents - paid);
-    const late = daysLate(i.dueDate, outstanding, now);
-    return { ...i, paid, outstanding, late, isLate: late > 0 && outstanding > 0 };
+  const totalTvaFactureeCents = invoices.reduce((s, inv) => s + inv.amountVatCents, 0);
+
+  const openInvoices = invoices.filter((i) => i.status === "OPEN");
+  const paidInvoices = invoices.filter((i) => i.status === "PAID");
+
+  // A encaisser = factures OPEN TTC
+  const totalAEncaisserCents = openInvoices.reduce((s, inv) => s + inv.amountGrossCents, 0);
+
+  // Encaissé = factures PAID (on prend paidAmountCents si présent, sinon TTC)
+  const totalEncaisseCents = paidInvoices.reduce(
+    (s, inv) => s + (inv.paidAmountCents ?? inv.amountGrossCents),
+    0
+  );
+
+  const facturesEnRetard = openInvoices.filter((inv) => new Date(inv.dueDate) < today);
+  const nbRetard = facturesEnRetard.length;
+
+  const retardCents = facturesEnRetard.reduce((s, inv) => s + inv.amountGrossCents, 0);
+
+  const joursMax = facturesEnRetard.length
+    ? Math.max(...facturesEnRetard.map((inv) => daysBetween(today, new Date(inv.dueDate))))
+    : 0;
+
+  // =========================
+  // 2) DEPENSES (année)
+  // =========================
+  const expenses = await prisma.expense.findMany({
+    where: { date: { gte: yearStart, lt: yearEnd } },
+    select: {
+      amountGrossCents: true,
+      amountVatCents: true,
+    },
   });
 
-  const ar = invRows.reduce((a, r) => a + r.outstanding, 0);
-  const arLate = invRows.reduce((a, r) => a + (r.isLate ? r.outstanding : 0), 0);
+  const totalDepenseCents = expenses.reduce((s, e) => s + e.amountGrossCents, 0);
+  const totalTvaPayeeCents = expenses.reduce((s, e) => s + e.amountVatCents, 0);
 
-  // TOP 10 retards (montant)
-  const byLateClient = new Map<string, { clientId: string; name: string; lateCents: number; maxLate: number }>();
-  for (const r of invRows) {
-    if (!r.isLate) continue;
-    const cur = byLateClient.get(r.clientId) || {
-      clientId: r.clientId,
-      name: r.client.name,
-      lateCents: 0,
-      maxLate: 0,
-    };
-    cur.lateCents += r.outstanding;
-    cur.maxLate = Math.max(cur.maxLate, r.late);
-    byLateClient.set(r.clientId, cur);
-  }
-  const topRetards = Array.from(byLateClient.values()).sort((a, b) => b.lateCents - a.lateCents).slice(0, 10);
+  // TVA nette (simple)
+  const tvaNetteCents = totalTvaFactureeCents - totalTvaPayeeCents;
 
-  // TOP 10 CA clients sur l'année (TTC facturé)
-  const byTurnover = new Map<string, { clientId: string; name: string; gross: number; vat: number }>();
-  for (const i of invoicesYear) {
-    const cur = byTurnover.get(i.clientId) || { clientId: i.clientId, name: i.client.name, gross: 0, vat: 0 };
-    cur.gross += i.amountGrossCents;
-    cur.vat += i.amountVatCents;
-    byTurnover.set(i.clientId, cur);
-  }
-  const topCA = Array.from(byTurnover.values()).sort((a, b) => b.gross - a.gross).slice(0, 10);
-
-  const yearGross = invoicesYear.reduce((a, i) => a + i.amountGrossCents, 0);
-  const yearVat = invoicesYear.reduce((a, i) => a + i.amountVatCents, 0);
-
-  // Achats année (TTC + TVA payée)
-  const billsYear = await prisma.bill.findMany({
-    where: { issueDate: { gte: from, lt: to }, status: { not: "CANCELED" } },
-    include: { supplier: true },
-    take: 10000,
-  });
-
-  const purchasesGross = billsYear.reduce((a, b) => a + b.amountGrossCents, 0);
-  const purchasesVat = billsYear.reduce((a, b) => a + b.amountVatCents, 0);
-
-  const years = [currentYear, currentYear - 1, currentYear - 2];
-
+  // =========================
+  // UI
+  // =========================
   return (
-    <Container>
-      <PageTitle
-        title="Dashboard"
-        subtitle={`Vue d’ensemble (filtre année : ${year})`}
-        right={
-          <form action="/" method="get" className="flex items-center gap-2">
-            <Select name="year" defaultValue={String(year)} className="w-32">
-              {years.map((y) => (
-                <option key={y} value={String(y)}>
+    <div className="mx-auto w-full max-w-6xl px-4 py-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-3xl font-extrabold tracking-tight text-slate-900">Dashboard</div>
+          <div className="mt-1 text-sm text-slate-600">Vue d’ensemble (filtre année : {year})</div>
+        </div>
+
+        <form className="flex items-center gap-2">
+          <select
+            name="year"
+            defaultValue={String(year)}
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+          >
+            {Array.from({ length: 7 }).map((_, i) => {
+              const y = new Date().getFullYear() - 3 + i;
+              return (
+                <option key={y} value={y}>
                   {y}
                 </option>
-              ))}
-            </Select>
-            <ButtonGhost type="submit">Appliquer</ButtonGhost>
-          </form>
-        }
-      />
+              );
+            })}
+          </select>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Stat label="Encours clients (à encaisser)" value={chf(ar)} sub={`En retard: ${chf(arLate)}`} />
-        <Stat label={`CA clients (TTC) ${year}`} value={chf(yearGross)} sub={`TVA facturée: ${chf(yearVat)}`} />
-        <Stat label={`Achats (TTC) ${year}`} value={chf(purchasesGross)} sub={`TVA payée: ${chf(purchasesVat)}`} />
-        <Stat label="Factures en retard" value={`${invRows.filter((r) => r.isLate).length}`} sub="Basé sur l’échéance" />
+          <button className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+            Appliquer
+          </button>
+        </form>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card title={`Top 10 clients (CA TTC) – ${year}`}>
-          <Table
-            headers={["Client", "CA TTC", "TVA"]}
-            rows={topCA.map((c) => [
-              <A key={c.clientId} href={`/clients/${c.clientId}`}>
-                {c.name}
-              </A>,
-              <span className="font-semibold text-slate-900">{chf(c.gross)}</span>,
-              chf(c.vat),
-            ])}
-          />
-        </Card>
+      {/* ✅ VITRINES "Résumé temps réel" */}
+      <div className="mt-6 grid gap-3 md:grid-cols-4">
+        {/* FACTURÉ */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold text-slate-600">FACTURÉ (TTC) {year}</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(totalFactureCents)}</div>
+          <div className="mt-2 text-xs text-slate-500">TVA facturée : {chf(totalTvaFactureeCents)}</div>
+        </div>
 
-        <Card title="Top 10 clients en retard (montant)">
-          <Table
-            headers={["Client", "Montant en retard", "Jours max"]}
-            rows={topRetards.map((c) => [
-              <A key={c.clientId} href={`/clients/${c.clientId}`}>
-                {c.name}
-              </A>,
-              <span className="font-semibold text-slate-900">{chf(c.lateCents)}</span>,
-              <Badge tone="danger">{c.maxLate} j</Badge>,
-            ])}
-          />
-        </Card>
+        {/* A ENCAISSER */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold text-slate-600">À ENCAISSER (OPEN)</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(totalAEncaisserCents)}</div>
+          <div className="mt-2 text-xs text-slate-500">
+            En retard : {chf(retardCents)} · {nbRetard} facture(s)
+          </div>
+        </div>
+
+        {/* ENCAISSÉ */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold text-slate-600">ENCAISSÉ (PAID)</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(totalEncaisseCents)}</div>
+          <div className="mt-2 text-xs text-slate-500">
+            (Prend en compte escompte si `paidAmountCents` existe)
+          </div>
+        </div>
+
+        {/* DÉPENSÉ */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold text-slate-600">DÉPENSÉ (TTC)</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(totalDepenseCents)}</div>
+          <div className="mt-2 text-xs text-slate-500">TVA payée : {chf(totalTvaPayeeCents)}</div>
+        </div>
       </div>
-    </Container>
+
+      {/* ✅ PETIT BLOC TVA */}
+      <div className="mt-6 grid gap-3 md:grid-cols-3">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2">
+          <div className="text-lg font-extrabold text-slate-900">TVA (année {year})</div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-600">TVA facturée</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(totalTvaFactureeCents)}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-600">TVA payée</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(totalTvaPayeeCents)}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-600">TVA nette</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(tvaNetteCents)}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ✅ FACTURES EN RETARD */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold text-slate-600">FACTURES EN RETARD</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{nbRetard}</div>
+          <div className="mt-2 text-xs text-slate-500">Jours max : {joursMax}</div>
+        </div>
+      </div>
+
+      {/* Ici tu peux garder tes tableaux Top 10 existants
+         Si tu veux, je te fais aussi les 2 tableaux "Top clients payés" et "Top dépenses" */}
+    </div>
   );
 }
