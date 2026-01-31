@@ -49,10 +49,17 @@ model Invoice {
 
   documentPath String?
 
-  status    InvoiceStatus @default(OPEN)
-  notes     String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  status InvoiceStatus @default(OPEN)
+  notes  String?
+
+  // ✅ Paiement (pour marquer payé + remise)
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  discountRateBp   Int?
+  discountCents    Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   payments Payment[]
 
@@ -108,10 +115,11 @@ model Bill {
 
   documentPath String?
 
-  status    BillStatus @default(OPEN)
-  notes     String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  status BillStatus @default(OPEN)
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   payments BillPayment[]
 
@@ -124,7 +132,7 @@ model BillPayment {
   id String @id @default(cuid())
 
   billId String
-  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+  bill   Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
   date        DateTime
   amountCents Int
@@ -155,7 +163,6 @@ model Expense {
   vendor   String
   category ExpenseCategory
 
-  // TVA
   vatRateBp        Int @default(810)
   amountGrossCents Int
   amountNetCents   Int
