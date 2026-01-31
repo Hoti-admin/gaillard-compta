@@ -1,256 +1,240 @@
 import { prisma } from "@/lib/prisma";
-import Link from "next/link";
-import { Container, Card, PageTitle, Badge, Button, Select, Input } from "@/components/ui";
+import { deleteExpense } from "./actions";
+import ExpenseFormClient from "./ExpenseFormClient";
+import EditExpenseButton from "./EditExpenseButton";
 
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, any>;
-};
+export const dynamic = "force-dynamic";
 
-function toYear(v: any, fallback: number) {
-  const n = Number(v);
-  return Number.isFinite(n) && n >= 2000 && n <= 2100 ? n : fallback;
+function chf(cents: number) {
+  return `CHF ${(cents / 100).toFixed(2)}`;
 }
-
-function moneyFromCents(cents: number) {
-  return (cents / 100).toFixed(2);
-}
-
-const CAT_LABELS: Record<string, string> = {
-  RESTAURANT: "Restaurant",
-  PARKING: "Parking",
-  CARBURANT: "Carburant",
-  DIVERS: "Divers",
-};
 
 function monthKey(d: Date) {
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth() + 1;
-  return `${y}-${String(m).padStart(2, "0")}`;
+  const x = new Date(d);
+  const yyyy = x.getFullYear();
+  const mm = String(x.getMonth() + 1).padStart(2, "0");
+  return `${mm}.${yyyy}`;
 }
 
-function monthLabel(key: string) {
-  const [y, m] = key.split("-");
-  return `${m}.${y}`;
-}
+export default async function ExpensesPage(props: { searchParams?: Promise<any> }) {
+  const sp = (await props.searchParams) ?? {};
+  const year = Number(sp.year ?? new Date().getFullYear());
+  const yearStart = new Date(`${year}-01-01T00:00:00.000Z`);
+  const yearEnd = new Date(`${year + 1}-01-01T00:00:00.000Z`);
 
-export default async function ExpensesPage({ searchParams }: PageProps) {
-  const sp = await Promise.resolve(searchParams ?? {});
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const year = toYear((sp as any)?.year, currentYear);
-
-  const from = new Date(Date.UTC(year, 0, 1, 0, 0, 0));
-  const to = new Date(Date.UTC(year + 1, 0, 1, 0, 0, 0));
-
+  // Dépenses année
   const expenses = await prisma.expense.findMany({
-    where: { date: { gte: from, lt: to } },
-    orderBy: { date: "desc" },
+    where: { date: { gte: yearStart, lt: yearEnd } },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
   });
 
-  // ✅ Résumé par mois / catégorie (cents)
-  const summary: Record<string, Record<string, number>> = {};
-  const categories = ["RESTAURANT", "PARKING", "CARBURANT", "DIVERS"];
+  // Encaissé année (factures payées)
+  const paidInvoices = await prisma.invoice.findMany({
+    where: {
+      status: "PAID",
+      // on se base sur paidAt si existant, sinon updatedAt
+      OR: [
+        { paidAt: { gte: yearStart, lt: yearEnd } },
+        { paidAt: null, updatedAt: { gte: yearStart, lt: yearEnd } },
+      ],
+    },
+    select: {
+      amountGrossCents: true,
+      amountNetCents: true,
+      amountVatCents: true,
+      paidAmountCents: true,
+    },
+  });
 
+  const paidGross = paidInvoices.reduce((s, i) => s + (i.paidAmountCents ?? i.amountGrossCents), 0);
+  const paidNet = paidInvoices.reduce((s, i) => s + i.amountNetCents, 0);
+  const paidVat = paidInvoices.reduce((s, i) => s + i.amountVatCents, 0);
+
+  const expGross = expenses.reduce((s, e) => s + e.amountGrossCents, 0);
+  const expNet = expenses.reduce((s, e) => s + e.amountNetCents, 0);
+  const expVat = expenses.reduce((s, e) => s + e.amountVatCents, 0);
+
+  const vatNet = paidVat - expVat;
+
+  // Résumé par mois (TTC par catégorie)
+  const byMonth = new Map<string, { total: number; byCat: Record<string, number> }>();
   for (const e of expenses) {
-    const key = monthKey(new Date(e.date));
-    if (!summary[key]) summary[key] = {};
-    const cat = String((e as any).category || "DIVERS");
-    const cents = Number((e as any).amountGrossCents || 0);
-    summary[key][cat] = (summary[key][cat] || 0) + cents;
+    const key = monthKey(e.date as any);
+    const cur = byMonth.get(key) ?? { total: 0, byCat: {} };
+    cur.total += e.amountGrossCents;
+    cur.byCat[e.category] = (cur.byCat[e.category] ?? 0) + e.amountGrossCents;
+    byMonth.set(key, cur);
   }
-
-  // liste mois (du plus récent au plus ancien)
-  const months = Object.keys(summary).sort((a, b) => (a < b ? 1 : -1));
-
-  // totaux année
-  const totalYear = expenses.reduce((s, e) => s + Number((e as any).amountGrossCents || 0), 0);
+  const monthRows = Array.from(byMonth.entries()).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 
   return (
-    <Container>
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <PageTitle>Dépenses</PageTitle>
-          <p className="text-sm text-slate-600">
-            Restaurant, parking, carburant, divers · TVA/CHF · Résumé mensuel
-          </p>
+          <div className="text-3xl font-extrabold tracking-tight text-slate-900">Dépenses</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Restaurant, parking, carburant, loyer, assurances… + TVA &amp; résumé annuel
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <form className="flex items-center gap-2">
-           <Select name="year" defaultValue={String(year)}>
-  {[currentYear - 1, currentYear, currentYear + 1].map((y) => (
-    <option key={y} value={String(y)}>
-      {y}
-    </option>
-  ))}
-</Select>
-            <Button type="submit">Afficher</Button>
-          </form>
-
-          <a
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            href={`/api/exports/expenses.pdf?year=${year}`}
+        <form className="flex items-center gap-2">
+          <select
+            name="year"
+            defaultValue={String(year)}
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
           >
-            Export PDF
-          </a>
+            {Array.from({ length: 6 }).map((_, i) => {
+              const y = new Date().getFullYear() - 2 + i;
+              return (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              );
+            })}
+          </select>
 
-          <a
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            href={`/api/exports/expenses.xlsx?year=${year}`}
-          >
-            Export Excel
-          </a>
+          <button className="rounded-2xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">
+            Afficher
+          </button>
+        </form>
+      </div>
+
+      {/* Résumé année */}
+      <div className="mt-6 grid gap-3 md:grid-cols-3">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold text-slate-600">Encaissé {year} (factures payées)</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(paidGross)}</div>
+          <div className="mt-2 text-sm text-slate-600">
+            HT: <span className="font-semibold text-slate-900">{chf(paidNet)}</span> · TVA encaissée:{" "}
+            <span className="font-semibold text-slate-900">{chf(paidVat)}</span>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold text-slate-600">Payé {year} (dépenses)</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(expGross)}</div>
+          <div className="mt-2 text-sm text-slate-600">
+            HT: <span className="font-semibold text-slate-900">{chf(expNet)}</span> · TVA payée:{" "}
+            <span className="font-semibold text-slate-900">{chf(expVat)}</span>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold text-slate-600">TVA nette {year}</div>
+          <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(vatNet)}</div>
+          <div className="mt-2 text-sm text-slate-600">
+            (TVA encaissée - TVA payée)
+          </div>
         </div>
       </div>
 
-      {/* KPI */}
-      <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <Card className="p-5">
-          <div className="text-xs font-semibold text-slate-500">Total dépenses {year}</div>
-          <div className="mt-1 text-2xl font-extrabold text-slate-900">
-            CHF {moneyFromCents(totalYear)}
+      {/* Ajouter dépense */}
+      <div className="mt-6 grid gap-3 lg:grid-cols-3">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-extrabold text-slate-900">+ Ajouter une dépense</div>
           </div>
-          <div className="mt-2 text-xs text-slate-500">Basé sur le TTC (amountGrossCents)</div>
-        </Card>
-
-        <Card className="p-5 md:col-span-2">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-bold text-slate-900">Résumé par mois</div>
-            <Badge tone="neutral">{months.length} mois</Badge>
+          <div className="mt-4">
+            <ExpenseFormClient mode="create" />
           </div>
+        </div>
 
-          {months.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-600">Aucune dépense pour {year}.</p>
-          ) : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-slate-500">
-                    <th className="py-2">Mois</th>
-                    <th className="py-2 text-right">Restaurant</th>
-                    <th className="py-2 text-right">Parking</th>
-                    <th className="py-2 text-right">Carburant</th>
-                    <th className="py-2 text-right">Divers</th>
-                    <th className="py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {months.map((m) => {
-                    const row = summary[m] || {};
-                    const r = row.RESTAURANT || 0;
-                    const p = row.PARKING || 0;
-                    const c = row.CARBURANT || 0;
-                    const d = row.DIVERS || 0;
-                    const t = r + p + c + d;
-
-                    return (
-                      <tr key={m} className="border-t border-slate-100">
-                        <td className="py-2 font-semibold text-slate-900">{monthLabel(m)}</td>
-                        <td className="py-2 text-right text-slate-900">CHF {moneyFromCents(r)}</td>
-                        <td className="py-2 text-right text-slate-900">CHF {moneyFromCents(p)}</td>
-                        <td className="py-2 text-right text-slate-900">CHF {moneyFromCents(c)}</td>
-                        <td className="py-2 text-right text-slate-900">CHF {moneyFromCents(d)}</td>
-                        <td className="py-2 text-right font-extrabold text-slate-900">CHF {moneyFromCents(t)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Liste dépenses */}
-      <div className="mt-6">
-        <Card className="p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-bold text-slate-900">Liste des dépenses ({year})</div>
-            <Badge tone="neutral">{expenses.length} lignes</Badge>
-          </div>
-
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500">
-                  <th className="py-2">Date</th>
-                  <th className="py-2">Fournisseur</th>
-                  <th className="py-2">Catégorie</th>
-                  <th className="py-2 text-right">TTC</th>
-                  <th className="py-2">Justificatif</th>
-                  <th className="py-2 text-right">Actions</th>
+        {/* Résumé par mois */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+          <div className="text-lg font-extrabold text-slate-900">Résumé par mois</div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="text-xs text-slate-600">
+                <tr className="border-b">
+                  <th className="py-2 text-left">Mois</th>
+                  <th className="py-2 text-left">Total</th>
+                  <th className="py-2 text-left">Détails</th>
                 </tr>
               </thead>
               <tbody>
-                {expenses.map((e: any) => {
-                  const d = new Date(e.date);
-                  const cat = String(e.category || "DIVERS");
-                  const path = e.receiptPath as string | null;
-
-                  return (
-                    <tr key={e.id} className="border-t border-slate-100">
-                      <td className="py-2 text-slate-700">{d.toLocaleDateString()}</td>
-                      <td className="py-2 font-semibold text-slate-900">{e.vendor}</td>
-                      <td className="py-2">
-                        <Badge tone="neutral">{CAT_LABELS[cat] || cat}</Badge>
-                      </td>
-                      <td className="py-2 text-right font-semibold text-slate-900">
-                        CHF {moneyFromCents(Number(e.amountGrossCents || 0))}
-                      </td>
-
-                      <td className="py-2">
-                        {path ? (
-                          <span className="inline-flex items-center gap-2">
-                            <Badge tone="success">OK</Badge>
-                            <a
-                              className="text-sm font-semibold text-blue-700 hover:underline"
-                              href={`/api/expenses/open?path=${encodeURIComponent(path)}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Ouvrir
-                            </a>
-                            <a
-                              className="text-sm font-semibold text-slate-700 hover:underline"
-                              href={`/api/expenses/download?path=${encodeURIComponent(path)}`}
-                            >
-                              Télécharger
-                            </a>
-                          </span>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </td>
-
-                      <td className="py-2 text-right">
-                        <form action="/api/expenses/delete" method="POST" className="inline">
-                          <input type="hidden" name="id" value={e.id} />
-                          <input type="hidden" name="receiptPath" value={path ?? ""} />
-                          <button className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50">
-                            Supprimer
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  );
-                })}
-
-                {expenses.length === 0 ? (
+                {monthRows.length === 0 ? (
                   <tr>
-                    <td className="py-6 text-center text-slate-500" colSpan={6}>
-                      Aucune dépense pour {year}.
+                    <td colSpan={3} className="py-4 text-slate-600">
+                      Aucune dépense sur {year}.
                     </td>
                   </tr>
-                ) : null}
+                ) : (
+                  monthRows.map(([m, v]) => (
+                    <tr key={m} className="border-b last:border-b-0">
+                      <td className="py-2 font-semibold text-slate-900">{m}</td>
+                      <td className="py-2 font-semibold text-slate-900">{chf(v.total)}</td>
+                      <td className="py-2 text-slate-600">
+                        {Object.entries(v.byCat)
+                          .map(([k, cents]) => `${k}: ${chf(cents)}`)
+                          .join(" · ")}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-
-          <div className="mt-4 text-xs text-slate-500">
-            * Les totaux se basent sur <b>amountGrossCents</b> (TTC).
-          </div>
-        </Card>
+        </div>
       </div>
-    </Container>
+
+      {/* Liste */}
+      <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-lg font-extrabold text-slate-900">Liste des dépenses ({year})</div>
+
+        <div className="mt-3 overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead className="text-xs text-slate-600">
+              <tr className="border-b">
+                <th className="py-2 text-left">Date</th>
+                <th className="py-2 text-left">Fournisseur</th>
+                <th className="py-2 text-left">Catégorie</th>
+                <th className="py-2 text-left">TTC</th>
+                <th className="py-2 text-left">TVA</th>
+                <th className="py-2 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {expenses.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-4 text-slate-600">
+                    Aucune dépense pour {year}.
+                  </td>
+                </tr>
+              ) : (
+                expenses.map((e) => (
+                  <tr key={e.id} className="border-b last:border-b-0">
+                    <td className="py-2">{new Date(e.date as any).toLocaleDateString()}</td>
+                    <td className="py-2 font-semibold text-slate-900">{e.vendor}</td>
+                    <td className="py-2">{e.category}</td>
+                    <td className="py-2 font-semibold text-slate-900">{chf(e.amountGrossCents)}</td>
+                    <td className="py-2">{chf(e.amountVatCents)}</td>
+                    <td className="py-2">
+                      <div className="flex flex-wrap gap-2">
+                        <EditExpenseButton expense={e} />
+
+                        <form
+                          action={async () => {
+                            "use server";
+                            await deleteExpense(e.id);
+                          }}
+                        >
+                          <button className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 hover:bg-rose-100">
+                            Supprimer
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-3 text-xs text-slate-500">
+          * Les totaux TVA/HT sont calculés automatiquement depuis le TTC et le taux TVA.
+        </div>
+      </div>
+    </div>
   );
 }
