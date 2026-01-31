@@ -12,20 +12,27 @@ export async function markInvoicePaid(input: {
   invoiceId: string;
   mode: "FULL" | "DISCOUNT" | "CUSTOM";
   discountRateBp?: number; // ex: 200 = 2.00%
-  customPaidCents?: number;
+  customPaidCents?: number; // montant TTC payé en centimes
 }) {
   const inv = await prisma.invoice.findUnique({
     where: { id: input.invoiceId },
     select: {
       id: true,
       status: true,
-      amountGrossCents: true, // ✅ TTC en centimes
+      amountGrossCents: true, // TTC en centimes
     },
   });
 
   if (!inv) throw new Error("Facture introuvable");
 
-  const gross = inv.amountGrossCents;
+  // (optionnel) si déjà payée, on ne refait pas
+  if (inv.status === InvoiceStatus.PAID) {
+    revalidatePath("/invoices", "page");
+    return;
+  }
+
+  const gross = Number(inv.amountGrossCents);
+  if (!Number.isFinite(gross) || gross < 0) throw new Error("Montant TTC invalide");
 
   let paidAmountCents = gross;
   let discountRateBp: number | null = null;
@@ -35,8 +42,12 @@ export async function markInvoicePaid(input: {
     const rate = Number(input.discountRateBp ?? 0);
     if (!Number.isFinite(rate) || rate <= 0) throw new Error("Taux d’escompte invalide");
 
-    discountRateBp = rate;
-    discountCents = roundCents((gross * rate) / 10000);
+    discountRateBp = roundCents(rate);
+    discountCents = roundCents((gross * discountRateBp) / 10000);
+
+    // sécurité: pas de montant négatif
+    if (discountCents > gross) discountCents = gross;
+
     paidAmountCents = gross - discountCents;
   }
 
@@ -46,7 +57,10 @@ export async function markInvoicePaid(input: {
 
     paidAmountCents = roundCents(custom);
 
-    // on calcule la différence comme "discount" (si tu veux)
+    // clamp (tu peux autoriser > gross si tu veux, mais généralement non)
+    if (paidAmountCents > gross) paidAmountCents = gross;
+
+    // on met la différence comme "discount"
     discountRateBp = null;
     discountCents = gross - paidAmountCents;
     if (discountCents < 0) discountCents = 0;
@@ -56,6 +70,8 @@ export async function markInvoicePaid(input: {
     where: { id: inv.id },
     data: {
       status: InvoiceStatus.PAID,
+
+      // ⚠️ ces champs doivent exister dans le modèle Invoice
       paidAt: new Date(),
       paidAmountCents,
       discountRateBp,
@@ -63,6 +79,5 @@ export async function markInvoicePaid(input: {
     },
   });
 
-  // important : refresh la page /invoices
-  revalidatePath("/invoices");
+  revalidatePath("/invoices", "page");
 }
