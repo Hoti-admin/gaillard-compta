@@ -1,12 +1,11 @@
-import { defineConfig } from "prisma/config";
+import type { PrismaConfig } from "prisma";
 
-export default defineConfig({
+export default {
   schema: "prisma/schema.prisma",
+
+  // ✅ Prisma v7: datasource = { url }, PAS datasource.db
   datasource: {
-    db: {
-      url: process.env.DATABASE_URL!,
-      // directUrl est optionnel. Si tu ne l'as pas, laisse commenté.
-      // directUrl: process.env.DIRECT_URL,
-    },
+    url: process.env.DATABASE_URL!,
+    // shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL, // optionnel
   },
-});
+} satisfies PrismaConfig;
