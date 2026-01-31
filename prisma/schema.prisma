@@ -3,9 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 enum InvoiceStatus {
@@ -41,13 +39,19 @@ model Invoice {
   client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   issueDate DateTime
-  dueDate   DateTime
+  dueDate   DateTime?
 
   // TVA
   vatRateBp        Int @default(810)
   amountGrossCents Int // TTC
   amountNetCents   Int // HT
   amountVatCents   Int // TVA
+
+  // Paiement / rabais
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  discountRateBp   Int?
+  discountCents    Int?
 
   documentPath String?
 
@@ -69,7 +73,7 @@ model Payment {
   invoiceId String
   invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
-  date        DateTime
+  date        DateTime @default(now())
   amountCents Int
   method      String?
   reference   String?
@@ -100,13 +104,19 @@ model Bill {
 
   number    String?
   issueDate DateTime
-  dueDate   DateTime
+  dueDate   DateTime?
 
   // TVA
   vatRateBp        Int @default(810)
   amountGrossCents Int
   amountNetCents   Int
   amountVatCents   Int
+
+  // Paiement / rabais
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  discountRateBp   Int?
+  discountCents    Int?
 
   documentPath String?
 
@@ -128,7 +138,7 @@ model BillPayment {
   billId String
   bill   Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
-  date        DateTime
+  date        DateTime @default(now())
   amountCents Int
   method      String?
   reference   String?
