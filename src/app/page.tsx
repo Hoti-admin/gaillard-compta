@@ -22,8 +22,6 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
   // =========================
   // 1) FACTURES (année)
   // =========================
-
-  // Toutes les factures de l’année (hors annulées)
   const invoices = await prisma.invoice.findMany({
     where: {
       issueDate: { gte: yearStart, lt: yearEnd },
@@ -35,21 +33,19 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
       dueDate: true,
       amountGrossCents: true,
       amountVatCents: true,
-      paidAmountCents: true, // si paiement avec escompte / montant perso
+      paidAmountCents: true,
+      clientId: true,
     },
   });
 
   const totalFactureCents = invoices.reduce((s, inv) => s + inv.amountGrossCents, 0);
-
   const totalTvaFactureeCents = invoices.reduce((s, inv) => s + inv.amountVatCents, 0);
 
   const openInvoices = invoices.filter((i) => i.status === "OPEN");
   const paidInvoices = invoices.filter((i) => i.status === "PAID");
 
-  // A encaisser = factures OPEN TTC
   const totalAEncaisserCents = openInvoices.reduce((s, inv) => s + inv.amountGrossCents, 0);
 
-  // Encaissé = factures PAID (on prend paidAmountCents si présent, sinon TTC)
   const totalEncaisseCents = paidInvoices.reduce(
     (s, inv) => s + (inv.paidAmountCents ?? inv.amountGrossCents),
     0
@@ -57,7 +53,6 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
 
   const facturesEnRetard = openInvoices.filter((inv) => new Date(inv.dueDate) < today);
   const nbRetard = facturesEnRetard.length;
-
   const retardCents = facturesEnRetard.reduce((s, inv) => s + inv.amountGrossCents, 0);
 
   const joursMax = facturesEnRetard.length
@@ -78,12 +73,59 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
   const totalDepenseCents = expenses.reduce((s, e) => s + e.amountGrossCents, 0);
   const totalTvaPayeeCents = expenses.reduce((s, e) => s + e.amountVatCents, 0);
 
-  // TVA nette (simple)
   const tvaNetteCents = totalTvaFactureeCents - totalTvaPayeeCents;
 
   // =========================
-  // UI
+  // 3) TOP 10 CLIENTS ENCAISSÉS (PAID)
   // =========================
+  const topPaidByClient = await prisma.invoice.groupBy({
+    by: ["clientId"],
+    where: {
+      issueDate: { gte: yearStart, lt: yearEnd },
+      status: "PAID",
+    },
+    _sum: {
+      // On additionne paidAmountCents si présent sinon amountGrossCents.
+      // Prisma groupBy ne peut pas faire "coalesce", donc on somme amountGrossCents,
+      // et on recalculera avec une query simple plus bas si tu veux précision parfaite.
+      amountGrossCents: true,
+      paidAmountCents: true,
+    },
+    orderBy: {
+      _sum: { amountGrossCents: "desc" },
+    },
+    take: 10,
+  });
+
+  const topClientIds = topPaidByClient.map((x) => x.clientId);
+  const clients = topClientIds.length
+    ? await prisma.client.findMany({
+        where: { id: { in: topClientIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
+
+  // Montant encaissé affiché : si paidAmountCents est null partout, on retombe sur TTC.
+  const topClientsRows = topPaidByClient.map((x) => {
+    const name = clientNameById.get(x.clientId) ?? "Client";
+    const sumPaid = x._sum.paidAmountCents ?? 0;
+    const sumGross = x._sum.amountGrossCents ?? 0;
+    const shown = sumPaid > 0 ? sumPaid : sumGross;
+    return { name, amountCents: shown };
+  });
+
+  // =========================
+  // 4) TOP DEPENSES PAR CATÉGORIE
+  // =========================
+  const topExpensesByCategory = await prisma.expense.groupBy({
+    by: ["category"],
+    where: { date: { gte: yearStart, lt: yearEnd } },
+    _sum: { amountGrossCents: true, amountVatCents: true },
+    orderBy: { _sum: { amountGrossCents: "desc" } },
+    take: 10,
+  });
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -114,16 +156,14 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
         </form>
       </div>
 
-      {/* ✅ VITRINES "Résumé temps réel" */}
+      {/* VITRINES */}
       <div className="mt-6 grid gap-3 md:grid-cols-4">
-        {/* FACTURÉ */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold text-slate-600">FACTURÉ (TTC) {year}</div>
           <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(totalFactureCents)}</div>
           <div className="mt-2 text-xs text-slate-500">TVA facturée : {chf(totalTvaFactureeCents)}</div>
         </div>
 
-        {/* A ENCAISSER */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold text-slate-600">À ENCAISSER (OPEN)</div>
           <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(totalAEncaisserCents)}</div>
@@ -132,7 +172,6 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
           </div>
         </div>
 
-        {/* ENCAISSÉ */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold text-slate-600">ENCAISSÉ (PAID)</div>
           <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(totalEncaisseCents)}</div>
@@ -141,7 +180,6 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
           </div>
         </div>
 
-        {/* DÉPENSÉ */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold text-slate-600">DÉPENSÉ (TTC)</div>
           <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(totalDepenseCents)}</div>
@@ -149,7 +187,7 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
         </div>
       </div>
 
-      {/* ✅ PETIT BLOC TVA */}
+      {/* TVA + RETARD */}
       <div className="mt-6 grid gap-3 md:grid-cols-3">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2">
           <div className="text-lg font-extrabold text-slate-900">TVA (année {year})</div>
@@ -169,7 +207,6 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
           </div>
         </div>
 
-        {/* ✅ FACTURES EN RETARD */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold text-slate-600">FACTURES EN RETARD</div>
           <div className="mt-2 text-2xl font-extrabold text-slate-900">{nbRetard}</div>
@@ -177,8 +214,86 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
         </div>
       </div>
 
-      {/* Ici tu peux garder tes tableaux Top 10 existants
-         Si tu veux, je te fais aussi les 2 tableaux "Top clients payés" et "Top dépenses" */}
+      {/* ✅ TABLEAUX */}
+      <div className="mt-6 grid gap-3 md:grid-cols-2">
+        {/* Top clients encaissés */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-lg font-extrabold text-slate-900">Top 10 clients encaissés ({year})</div>
+          <div className="mt-1 text-xs text-slate-500">Basé sur factures PAID (TTC ou paidAmount si dispo)</div>
+
+          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Client</th>
+                  <th className="px-3 py-2 text-right">Encaissé</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topClientsRows.length ? (
+                  topClientsRows.map((r) => (
+                    <tr key={r.name} className="border-t border-slate-200">
+                      <td className="px-3 py-2 text-slate-900">{r.name}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                        {chf(r.amountCents)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-3 py-3 text-slate-500" colSpan={2}>
+                      Aucun encaissement (PAID) sur {year}.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Top dépenses par catégorie */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-lg font-extrabold text-slate-900">Top dépenses par catégorie ({year})</div>
+          <div className="mt-1 text-xs text-slate-500">Basé sur dépenses (TTC) de l’année</div>
+
+          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
+                <tr>
+                  <th className="px-3 py-2 text-left">Catégorie</th>
+                  <th className="px-3 py-2 text-right">Total TTC</th>
+                  <th className="px-3 py-2 text-right">TVA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topExpensesByCategory.length ? (
+                  topExpensesByCategory.map((x) => (
+                    <tr key={x.category} className="border-t border-slate-200">
+                      <td className="px-3 py-2 text-slate-900">{String(x.category)}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                        {chf(x._sum.amountGrossCents ?? 0)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-slate-900">
+                        {chf(x._sum.amountVatCents ?? 0)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-3 py-3 text-slate-500" colSpan={3}>
+                      Aucune dépense sur {year}.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-3 text-xs text-slate-500">
+            Astuce : si tu veux afficher des noms “jolis”, on peut faire un mapping (ex: CARBURANT → Carburant).
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
