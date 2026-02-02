@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
 function toCents(chf: string) {
-  // accepte "12", "12.5", "12,50", "10 695,50"
   const cleaned = String(chf)
     .replace(/\s/g, "")
     .replace(/’/g, "")
@@ -15,7 +14,6 @@ function toCents(chf: string) {
 }
 
 function bpFromPercent(p: string) {
-  // "8.1" => 810
   const cleaned = String(p).replace(/\s/g, "").replace(",", ".");
   const n = Number(cleaned);
   if (!Number.isFinite(n)) return NaN;
@@ -23,8 +21,7 @@ function bpFromPercent(p: string) {
 }
 
 function computeVat(amountGrossCents: number, vatRateBp: number) {
-  // gross = net + vat
-  const rate = vatRateBp / 10000; // 810 => 0.081
+  const rate = vatRateBp / 10000;
   const net = Math.round(amountGrossCents / (1 + rate));
   const vat = amountGrossCents - net;
   return { net, vat };
@@ -58,10 +55,7 @@ export async function createInvoiceForClient(formData: FormData) {
 
   const { net, vat } = computeVat(amountGrossCents, vatRateBp);
 
-  const finalNotes = [
-    chantier ? `Chantier: ${chantier}` : null,
-    notes ? notes : null,
-  ]
+  const finalNotes = [chantier ? `Chantier: ${chantier}` : null, notes ? notes : null]
     .filter(Boolean)
     .join("\n");
 
@@ -76,11 +70,11 @@ export async function createInvoiceForClient(formData: FormData) {
       amountNetCents: net,
       amountVatCents: vat,
       notes: finalNotes || null,
-      // status default OPEN dans le schema
     },
   });
 
   revalidatePath("/clients");
-  // si tu as une page /clients/[id], ça aussi :
   revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/invoices");
+  revalidatePath("/");
 }

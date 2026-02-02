@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { ExpenseCategory } from "@prisma/client";
 
 function toCents(chf: string) {
   // accepte "12", "12.5", "12,50", "10 695,50"
@@ -23,31 +24,30 @@ function bpFromPercent(p: string) {
 }
 
 function computeVat(amountGrossCents: number, vatRateBp: number) {
-  // gross = net + vat
-  const rate = vatRateBp / 10000; // 810 => 0.081
+  // gross = net + vat ; vatRateBp = 810 (8.10%)
+  const rate = vatRateBp / 10000;
   const net = Math.round(amountGrossCents / (1 + rate));
   const vat = amountGrossCents - net;
   return { net, vat };
 }
 
-export async function createInvoiceForClient(formData: FormData) {
-  const clientId = String(formData.get("clientId") ?? "").trim();
-  const number = String(formData.get("number") ?? "").trim();
-  const issueDateStr = String(formData.get("issueDate") ?? "");
-  const dueDateStr = String(formData.get("dueDate") ?? "");
-
-  const chantier = String(formData.get("siteName") ?? "").trim();
+// ==========================
+// CREATE EXPENSE
+// ==========================
+export async function createExpense(formData: FormData) {
+  const dateStr = String(formData.get("date") ?? "");
+  const vendor = String(formData.get("vendor") ?? "").trim();
+  const category = String(formData.get("category") ?? "");
   const ttcStr = String(formData.get("ttc") ?? "");
-  const vatPercent = String(formData.get("vat") ?? "8.1");
+  const vatPercent = String(formData.get("vat") ?? "8.1"); // ✅ default 8.1%
   const notes = String(formData.get("notes") ?? "").trim();
 
-  if (!clientId) throw new Error("Client manquant");
-  if (!number) throw new Error("Numéro de facture manquant");
-  if (!issueDateStr) throw new Error("Date facture manquante");
-  if (!dueDateStr) throw new Error("Échéance manquante");
+  if (!dateStr) throw new Error("Date manquante");
+  if (!vendor) throw new Error("Nom/Fournisseur manquant");
+  if (!category) throw new Error("Catégorie manquante");
 
   const amountGrossCents = toCents(ttcStr);
-  if (!Number.isFinite(amountGrossCents) || amountGrossCents <= 0) {
+  if (!Number.isFinite(amountGrossCents) || amountGrossCents < 0) {
     throw new Error("Montant TTC invalide");
   }
 
@@ -56,31 +56,80 @@ export async function createInvoiceForClient(formData: FormData) {
     throw new Error("Taux TVA invalide");
   }
 
+  const cat = category as ExpenseCategory;
   const { net, vat } = computeVat(amountGrossCents, vatRateBp);
 
-  const finalNotes = [
-    chantier ? `Chantier: ${chantier}` : null,
-    notes ? notes : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  await prisma.invoice.create({
+  await prisma.expense.create({
     data: {
-      clientId,
-      number,
-      issueDate: new Date(issueDateStr),
-      dueDate: new Date(dueDateStr),
+      date: new Date(dateStr),
+      vendor,
+      category: cat,
       vatRateBp,
       amountGrossCents,
       amountNetCents: net,
       amountVatCents: vat,
-      notes: finalNotes || null,
-      // status default OPEN dans le schema
+      notes: notes || null,
     },
   });
 
-  revalidatePath("/clients");
-  // si tu as une page /clients/[id], ça aussi :
-  revalidatePath(`/clients/${clientId}`);
+  revalidatePath("/expenses");
+  revalidatePath("/");
+}
+
+// ==========================
+// UPDATE EXPENSE
+// ==========================
+export async function updateExpense(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const dateStr = String(formData.get("date") ?? "");
+  const vendor = String(formData.get("vendor") ?? "").trim();
+  const category = String(formData.get("category") ?? "");
+  const ttcStr = String(formData.get("ttc") ?? "");
+  const vatPercent = String(formData.get("vat") ?? "8.1"); // ✅ default 8.1%
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!id) throw new Error("ID manquant");
+  if (!dateStr) throw new Error("Date manquante");
+  if (!vendor) throw new Error("Nom/Fournisseur manquant");
+  if (!category) throw new Error("Catégorie manquante");
+
+  const amountGrossCents = toCents(ttcStr);
+  if (!Number.isFinite(amountGrossCents) || amountGrossCents < 0) {
+    throw new Error("Montant TTC invalide");
+  }
+
+  const vatRateBp = bpFromPercent(vatPercent);
+  if (!Number.isFinite(vatRateBp) || vatRateBp < 0) {
+    throw new Error("Taux TVA invalide");
+  }
+
+  const cat = category as ExpenseCategory;
+  const { net, vat } = computeVat(amountGrossCents, vatRateBp);
+
+  await prisma.expense.update({
+    where: { id },
+    data: {
+      date: new Date(dateStr),
+      vendor,
+      category: cat,
+      vatRateBp,
+      amountGrossCents,
+      amountNetCents: net,
+      amountVatCents: vat,
+      notes: notes || null,
+    },
+  });
+
+  revalidatePath("/expenses");
+  revalidatePath("/");
+}
+
+// ==========================
+// DELETE EXPENSE
+// ==========================
+export async function deleteExpense(id: string) {
+  if (!id) return;
+  await prisma.expense.delete({ where: { id } });
+  revalidatePath("/expenses");
+  revalidatePath("/");
 }
