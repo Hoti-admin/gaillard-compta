@@ -158,7 +158,6 @@ enum ExpenseCategory {
   TRANSPORT
   DIVERS
 
-  // ✅ Ajouts
   LOYER_DEPOT
   ASSURANCE_MALADIE
   ASSURANCE_LPP

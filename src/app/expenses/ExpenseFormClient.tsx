@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { Expense } from "@prisma/client";
 import { createExpense, updateExpense } from "./actions";
 
 type Mode = "create" | "edit";
@@ -28,7 +29,11 @@ const CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 
 function parseMoneyToCents(raw: string) {
-  const cleaned = raw.trim().replace(/['\s]/g, "").replace(",", ".");
+  // ✅ accepte "10'695,50" / "10695.50" / "10 695,50"
+  const cleaned = raw
+    .trim()
+    .replace(/['\s]/g, "")
+    .replace(",", ".");
   const n = Number(cleaned);
   if (!Number.isFinite(n) || n < 0) return NaN;
   return Math.round(n * 100);
@@ -44,22 +49,29 @@ function parseVatRateToBp(raw: string) {
 
 export default function ExpenseFormClient(props: {
   mode: Mode;
-  expense?: any; // si mode=edit, tu passes l'objet expense
+  initial?: Expense;
+  onDone?: () => void;
 }) {
-  const exp = props.expense;
+  const exp = props.initial;
 
   const [date, setDate] = useState(() => {
-    if (exp?.date) {
-      const d = new Date(exp.date);
-      return d.toISOString().slice(0, 10);
-    }
+    if (exp?.date) return new Date(exp.date).toISOString().slice(0, 10);
     return new Date().toISOString().slice(0, 10);
   });
 
   const [vendor, setVendor] = useState(exp?.vendor ?? "");
-  const [category, setCategory] = useState(exp?.category ?? "RESTAURANT");
-  const [ttc, setTtc] = useState(exp ? String((exp.amountGrossCents / 100).toFixed(2)) : "");
-  const [vatPct, setVatPct] = useState(exp ? String((exp.vatRateBp / 100).toFixed(1)) : "8.1"); // ✅ défaut 8.1%
+  const [category, setCategory] = useState<string>(exp?.category ?? "RESTAURANT");
+
+  const [ttc, setTtc] = useState(() => {
+    if (!exp) return "";
+    return (exp.amountGrossCents / 100).toFixed(2);
+  });
+
+  const [vatPct, setVatPct] = useState(() => {
+    if (!exp) return "8.1"; // ✅ défaut
+    return (exp.vatRateBp / 100).toFixed(1);
+  });
+
   const [notes, setNotes] = useState(exp?.notes ?? "");
 
   const [loading, setLoading] = useState(false);
@@ -71,14 +83,14 @@ export default function ExpenseFormClient(props: {
 
     const amountGrossCents = parseMoneyToCents(ttc);
     if (!Number.isFinite(amountGrossCents)) {
-      setMsg("Montant TTC invalide (ex: 25.00 ou 25,00).");
+      setMsg("Montant TTC invalide. Exemple: 25,00 ou 25.00");
       setLoading(false);
       return;
     }
 
     const vatRateBp = parseVatRateToBp(vatPct);
     if (!Number.isFinite(vatRateBp)) {
-      setMsg("TVA invalide (ex: 8.1).");
+      setMsg("TVA invalide. Exemple: 8.1");
       setLoading(false);
       return;
     }
@@ -101,16 +113,23 @@ export default function ExpenseFormClient(props: {
     try {
       if (props.mode === "create") {
         await createExpense(payload);
+
         // reset
         setVendor("");
         setCategory("RESTAURANT");
         setTtc("");
         setVatPct("8.1");
         setNotes("");
+
+        setMsg("✅ Dépense ajoutée");
+        props.onDone?.();
       } else {
+        if (!exp?.id) throw new Error("Dépense invalide (id manquant).");
         await updateExpense({ id: exp.id, ...payload });
+
+        setMsg("✅ Modifié");
+        props.onDone?.();
       }
-      setMsg("✅ Enregistré");
     } catch (e: any) {
       setMsg(e?.message || "Erreur");
     } finally {

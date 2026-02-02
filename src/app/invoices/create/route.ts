@@ -1,111 +1,70 @@
+// src/app/invoices/create/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { InvoiceStatus } from "@prisma/client";
+import { parseMoneyToCents, parseVatRateToBp } from "@/lib/money";
 
-export const runtime = "nodejs";
-
-function parseDateOrNull(v: any): Date | null {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function parseInvoiceStatus(v: any): InvoiceStatus {
-  const s = String(v ?? "").toUpperCase().trim();
-  const allowed: InvoiceStatus[] = [InvoiceStatus.OPEN, InvoiceStatus.PAID, InvoiceStatus.CANCELED];
-  return allowed.includes(s as InvoiceStatus) ? (s as InvoiceStatus) : InvoiceStatus.OPEN;
-}
-
-// "120.50" -> 12050
-function toCents(v: any): number {
-  if (v == null || v === "") return 0;
-
-  // si déjà en cents
-  if (typeof v === "number" && Number.isFinite(v)) {
-    // si tu passes 12050 directement
-    if (Number.isInteger(v) && v > 1000) return v;
-    // sinon on suppose CHF
-    return Math.round(v * 100);
-  }
-
-  const s = String(v).replace(/\s/g, "").replace(",", ".");
-  const n = Number(s);
-  if (!Number.isFinite(n)) return 0;
-  return Math.round(n * 100);
+function centsToParts(grossCents: number, vatRateBp: number) {
+  // net = gross / (1 + vat)
+  const denom = 10000 + vatRateBp;
+  const net = Math.round((grossCents * 10000) / denom);
+  const vat = grossCents - net;
+  return { netCents: net, vatCents: vat };
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // ✅ facture client: clientId
-    // fallback si encore supplierId côté front
-    const clientId = String(body?.clientId ?? body?.supplierId ?? "").trim();
+    const clientId = String(body.clientId || "");
+    const number = String(body.number || "").trim();
+    const issueDate = new Date(body.issueDate);
+    const dueDate = new Date(body.dueDate);
+
+    const projectName = body.projectName ? String(body.projectName).trim() : null;
+
     if (!clientId) {
-      return NextResponse.json({ error: "clientId manquant" }, { status: 400 });
+      return NextResponse.json({ error: "Client manquant." }, { status: 400 });
     }
-
-    const number = String(body?.number ?? "").trim();
     if (!number) {
-      return NextResponse.json({ error: "number manquant" }, { status: 400 });
+      return NextResponse.json({ error: "Numéro de facture manquant." }, { status: 400 });
+    }
+    if (isNaN(issueDate.getTime()) || isNaN(dueDate.getTime())) {
+      return NextResponse.json({ error: "Dates invalides." }, { status: 400 });
     }
 
-    const issueDate = parseDateOrNull(body?.issueDate) ?? new Date();
-    const dueDate = parseDateOrNull(body?.dueDate); // Date | null
-
-    const status = parseInvoiceStatus(body?.status);
-
-    // ✅ Prisma: "notes" (pas "note")
-    const notes =
-      body?.notes != null ? String(body.notes) :
-      body?.note != null ? String(body.note) :
-      undefined;
-
-    // ✅ Champs requis
-    const amountGrossCents =
-      body?.amountGrossCents != null ? toCents(body.amountGrossCents) :
-      body?.amountGross != null ? toCents(body.amountGross) :
-      body?.totalTtc != null ? toCents(body.totalTtc) :
-      0;
-
-    const amountNetCents =
-      body?.amountNetCents != null ? toCents(body.amountNetCents) :
-      body?.amountNet != null ? toCents(body.amountNet) :
-      body?.totalHt != null ? toCents(body.totalHt) :
-      body?.totalHT != null ? toCents(body.totalHT) :
-      0;
-
-    let amountVatCents =
-      body?.amountVatCents != null ? toCents(body.amountVatCents) :
-      body?.amountVat != null ? toCents(body.amountVat) :
-      body?.totalTva != null ? toCents(body.totalTva) :
-      0;
-
-    // calc TVA si manquante mais TTC & HT présents
-    if (amountVatCents === 0 && amountGrossCents > 0 && amountNetCents > 0) {
-      amountVatCents = Math.max(0, amountGrossCents - amountNetCents);
+    // ✅ TTC robuste (virgule/point/apostrophe)
+    const grossCents = parseMoneyToCents(body.amountGross);
+    if (grossCents == null || grossCents <= 0) {
+      return NextResponse.json(
+        { error: "Montant TTC invalide. Exemple: 10695.50 ou 10'695,50" },
+        { status: 400 }
+      );
     }
 
-    // ✅ IMPORTANT: construire l'objet puis ajouter dueDate uniquement si présent
-    const data: any = {
-      clientId,
-      number,
-      issueDate,
-      status,
-      amountGrossCents,
-      amountNetCents,
-      amountVatCents,
-    };
+    // ✅ TVA par défaut: 8.1%
+    const vatRateBp = parseVatRateToBp(body.vatRateBp ?? body.vatRate, 810);
 
-    if (dueDate) data.dueDate = dueDate;
-    if (notes) data.notes = notes;
+    const { netCents, vatCents } = centsToParts(grossCents, vatRateBp);
 
-    const created = await prisma.invoice.create({ data });
+    const created = await prisma.invoice.create({
+      data: {
+        clientId,
+        number,
+        issueDate,
+        dueDate,
+        projectName: projectName || null,
+        vatRateBp,
+        amountGrossCents: grossCents,
+        amountNetCents: netCents,
+        amountVatCents: vatCents,
+      },
+      select: { id: true },
+    });
 
-    return NextResponse.json({ ok: true, invoice: created }, { status: 201 });
+    return NextResponse.json({ ok: true, id: created.id });
   } catch (e: any) {
     return NextResponse.json(
-      { error: e?.message || "Erreur création facture" },
+      { error: e?.message || "Erreur serveur" },
       { status: 500 }
     );
   }
