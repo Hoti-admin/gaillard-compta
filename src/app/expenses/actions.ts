@@ -5,10 +5,12 @@ import { revalidatePath } from "next/cache";
 import { ExpenseCategory } from "@prisma/client";
 
 function toCents(chf: string) {
-  // accepte "12", "12.5", "12,50", "10 695,50"
+  // accepte "12", "12.5", "12,50", "10 695,50", "10’695.50"
   const cleaned = String(chf)
+    .trim()
     .replace(/\s/g, "")
     .replace(/’/g, "")
+    .replace(/'/g, "")
     .replace(",", ".");
   const n = Number(cleaned);
   if (!Number.isFinite(n)) return NaN;
@@ -17,34 +19,40 @@ function toCents(chf: string) {
 
 function bpFromPercent(p: string) {
   // "8.1" => 810
-  const cleaned = String(p).replace(/\s/g, "").replace(",", ".");
+  const cleaned = String(p).trim().replace(/\s/g, "").replace(",", ".");
   const n = Number(cleaned);
   if (!Number.isFinite(n)) return NaN;
   return Math.round(n * 100);
 }
 
 function computeVat(amountGrossCents: number, vatRateBp: number) {
-  // gross = net + vat ; vatRateBp = 810 (8.10%)
+  // gross = net + vat ; rate = 810 => 8.10%
   const rate = vatRateBp / 10000;
   const net = Math.round(amountGrossCents / (1 + rate));
   const vat = amountGrossCents - net;
   return { net, vat };
 }
 
-// ==========================
-// CREATE EXPENSE
-// ==========================
+function parseCategory(raw: string): ExpenseCategory {
+  // sécurise l’input au cas où
+  const key = String(raw ?? "").trim() as ExpenseCategory;
+  if (!key || !(key in ExpenseCategory)) {
+    // fallback
+    return ExpenseCategory.DIVERS;
+  }
+  return key;
+}
+
 export async function createExpense(formData: FormData) {
   const dateStr = String(formData.get("date") ?? "");
   const vendor = String(formData.get("vendor") ?? "").trim();
-  const category = String(formData.get("category") ?? "");
+  const categoryRaw = String(formData.get("category") ?? "");
   const ttcStr = String(formData.get("ttc") ?? "");
-  const vatPercent = String(formData.get("vat") ?? "8.1"); // ✅ default 8.1%
+  const vatPercent = String(formData.get("vat") ?? "8.1");
   const notes = String(formData.get("notes") ?? "").trim();
 
   if (!dateStr) throw new Error("Date manquante");
   if (!vendor) throw new Error("Nom/Fournisseur manquant");
-  if (!category) throw new Error("Catégorie manquante");
 
   const amountGrossCents = toCents(ttcStr);
   if (!Number.isFinite(amountGrossCents) || amountGrossCents < 0) {
@@ -56,14 +64,14 @@ export async function createExpense(formData: FormData) {
     throw new Error("Taux TVA invalide");
   }
 
-  const cat = category as ExpenseCategory;
+  const category = parseCategory(categoryRaw);
   const { net, vat } = computeVat(amountGrossCents, vatRateBp);
 
   await prisma.expense.create({
     data: {
       date: new Date(dateStr),
       vendor,
-      category: cat,
+      category,
       vatRateBp,
       amountGrossCents,
       amountNetCents: net,
@@ -73,25 +81,20 @@ export async function createExpense(formData: FormData) {
   });
 
   revalidatePath("/expenses");
-  revalidatePath("/");
 }
 
-// ==========================
-// UPDATE EXPENSE
-// ==========================
 export async function updateExpense(formData: FormData) {
-  const id = String(formData.get("id") ?? "");
+  const id = String(formData.get("id") ?? "").trim();
   const dateStr = String(formData.get("date") ?? "");
   const vendor = String(formData.get("vendor") ?? "").trim();
-  const category = String(formData.get("category") ?? "");
+  const categoryRaw = String(formData.get("category") ?? "");
   const ttcStr = String(formData.get("ttc") ?? "");
-  const vatPercent = String(formData.get("vat") ?? "8.1"); // ✅ default 8.1%
+  const vatPercent = String(formData.get("vat") ?? "8.1");
   const notes = String(formData.get("notes") ?? "").trim();
 
   if (!id) throw new Error("ID manquant");
   if (!dateStr) throw new Error("Date manquante");
   if (!vendor) throw new Error("Nom/Fournisseur manquant");
-  if (!category) throw new Error("Catégorie manquante");
 
   const amountGrossCents = toCents(ttcStr);
   if (!Number.isFinite(amountGrossCents) || amountGrossCents < 0) {
@@ -103,7 +106,7 @@ export async function updateExpense(formData: FormData) {
     throw new Error("Taux TVA invalide");
   }
 
-  const cat = category as ExpenseCategory;
+  const category = parseCategory(categoryRaw);
   const { net, vat } = computeVat(amountGrossCents, vatRateBp);
 
   await prisma.expense.update({
@@ -111,7 +114,7 @@ export async function updateExpense(formData: FormData) {
     data: {
       date: new Date(dateStr),
       vendor,
-      category: cat,
+      category,
       vatRateBp,
       amountGrossCents,
       amountNetCents: net,
@@ -121,15 +124,11 @@ export async function updateExpense(formData: FormData) {
   });
 
   revalidatePath("/expenses");
-  revalidatePath("/");
 }
 
-// ==========================
-// DELETE EXPENSE
-// ==========================
 export async function deleteExpense(id: string) {
-  if (!id) return;
-  await prisma.expense.delete({ where: { id } });
+  const cleanId = String(id ?? "").trim();
+  if (!cleanId) return;
+  await prisma.expense.delete({ where: { id: cleanId } });
   revalidatePath("/expenses");
-  revalidatePath("/");
 }
