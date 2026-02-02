@@ -11,6 +11,30 @@ function daysBetween(a: Date, b: Date) {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
+const EXPENSE_CATEGORY_LABEL: Record<string, string> = {
+  RESTAURANT: "Restaurant",
+  CARBURANT: "Carburant",
+  PARKING: "Parking",
+  FOURNITURES: "Fournitures",
+  OUTILLAGE: "Outillage",
+  TELEPHONE: "Téléphone",
+  INTERNET: "Internet",
+  TRANSPORT: "Transport",
+  DIVERS: "Divers",
+
+  LOYER_DEPOT: "Loyer / Dépôt",
+  ASSURANCE_MALADIE: "Assurance maladie",
+  ASSURANCE_LPP: "Assurance LPP",
+  SALAIRE_EMPLOYES: "Salaires employés",
+  SALAIRE_CADRES: "Salaires cadres",
+  GARAGE_REPARATIONS: "Garage / réparations véhicules",
+  ASSURANCE_VEHICULE: "Assurance véhicule",
+};
+
+function catLabel(key: string) {
+  return EXPENSE_CATEGORY_LABEL[key] ?? key;
+}
+
 export default async function DashboardPage(props: { searchParams?: Promise<any> }) {
   const sp = (await props.searchParams) ?? {};
   const year = Number(sp.year ?? new Date().getFullYear());
@@ -85,9 +109,6 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
       status: "PAID",
     },
     _sum: {
-      // On additionne paidAmountCents si présent sinon amountGrossCents.
-      // Prisma groupBy ne peut pas faire "coalesce", donc on somme amountGrossCents,
-      // et on recalculera avec une query simple plus bas si tu veux précision parfaite.
       amountGrossCents: true,
       paidAmountCents: true,
     },
@@ -106,7 +127,6 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
     : [];
   const clientNameById = new Map(clients.map((c) => [c.id, c.name]));
 
-  // Montant encaissé affiché : si paidAmountCents est null partout, on retombe sur TTC.
   const topClientsRows = topPaidByClient.map((x) => {
     const name = clientNameById.get(x.clientId) ?? "Client";
     const sumPaid = x._sum.paidAmountCents ?? 0;
@@ -269,7 +289,7 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
                 {topExpensesByCategory.length ? (
                   topExpensesByCategory.map((x) => (
                     <tr key={x.category} className="border-t border-slate-200">
-                      <td className="px-3 py-2 text-slate-900">{String(x.category)}</td>
+                      <td className="px-3 py-2 text-slate-900">{catLabel(String(x.category))}</td>
                       <td className="px-3 py-2 text-right font-semibold text-slate-900">
                         {chf(x._sum.amountGrossCents ?? 0)}
                       </td>
@@ -290,7 +310,7 @@ export default async function DashboardPage(props: { searchParams?: Promise<any>
           </div>
 
           <div className="mt-3 text-xs text-slate-500">
-            Astuce : si tu veux afficher des noms “jolis”, on peut faire un mapping (ex: CARBURANT → Carburant).
+            (On affiche des noms “propres” : SALAIRE_EMPLOYES → Salaires employés, etc.)
           </div>
         </div>
       </div>

@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState } from "react";
 import { createExpense, updateExpense } from "./actions";
-import type { Expense, ExpenseCategory } from "@prisma/client";
 
 type Mode = "create" | "edit";
 
-const categories: { value: ExpenseCategory; label: string }[] = [
+const CATEGORY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "RESTAURANT", label: "Restaurant" },
   { value: "CARBURANT", label: "Carburant" },
   { value: "PARKING", label: "Parking" },
@@ -15,158 +14,194 @@ const categories: { value: ExpenseCategory; label: string }[] = [
   { value: "TELEPHONE", label: "Téléphone" },
   { value: "INTERNET", label: "Internet" },
   { value: "TRANSPORT", label: "Transport" },
-  { value: "LOYER", label: "Loyer" },
-  { value: "DEPOT", label: "Dépôt" },
+
+  // ✅ Ajouts
+  { value: "LOYER_DEPOT", label: "Loyer / Dépôt" },
   { value: "ASSURANCE_MALADIE", label: "Assurance maladie" },
   { value: "ASSURANCE_LPP", label: "Assurance LPP" },
-  { value: "AUTRE", label: "Autre" },
+  { value: "SALAIRE_EMPLOYES", label: "Salaires employés" },
+  { value: "SALAIRE_CADRES", label: "Salaires cadres" },
+  { value: "GARAGE_REPARATIONS", label: "Garage / réparations véhicules" },
+  { value: "ASSURANCE_VEHICULE", label: "Assurance véhicule" },
+
   { value: "DIVERS", label: "Divers" },
 ];
 
-function centsToChf(cents?: number | null) {
-  const n = (cents ?? 0) / 100;
-  return n.toFixed(2);
+function parseMoneyToCents(raw: string) {
+  const cleaned = raw.trim().replace(/['\s]/g, "").replace(",", ".");
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  return Math.round(n * 100);
 }
 
-function isoDate(d: Date) {
-  // yyyy-mm-dd
-  const x = new Date(d);
-  const yyyy = x.getFullYear();
-  const mm = String(x.getMonth() + 1).padStart(2, "0");
-  const dd = String(x.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+function parseVatRateToBp(raw: string) {
+  // "8.1" => 810
+  const cleaned = raw.trim().replace(",", ".");
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  return Math.round(n * 100);
 }
 
 export default function ExpenseFormClient(props: {
   mode: Mode;
-  initial?: Expense | null;
-  onDone?: () => void;
+  expense?: any; // si mode=edit, tu passes l'objet expense
 }) {
-  const { mode, initial, onDone } = props;
+  const exp = props.expense;
 
-  const [pending, start] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [date, setDate] = useState(() => {
+    if (exp?.date) {
+      const d = new Date(exp.date);
+      return d.toISOString().slice(0, 10);
+    }
+    return new Date().toISOString().slice(0, 10);
+  });
 
-  const defaults = useMemo(() => {
-    const today = isoDate(new Date());
-    return {
-      id: initial?.id ?? "",
-      date: initial?.date ? isoDate(initial.date as any) : today,
-      vendor: initial?.vendor ?? "",
-      category: (initial?.category as ExpenseCategory) ?? "RESTAURANT",
-      ttc: centsToChf(initial?.amountGrossCents),
-      vat: ((initial?.vatRateBp ?? 810) / 100).toFixed(1), // 810 => "8.1"
-      notes: initial?.notes ?? "",
+  const [vendor, setVendor] = useState(exp?.vendor ?? "");
+  const [category, setCategory] = useState(exp?.category ?? "RESTAURANT");
+  const [ttc, setTtc] = useState(exp ? String((exp.amountGrossCents / 100).toFixed(2)) : "");
+  const [vatPct, setVatPct] = useState(exp ? String((exp.vatRateBp / 100).toFixed(1)) : "8.1"); // ✅ défaut 8.1%
+  const [notes, setNotes] = useState(exp?.notes ?? "");
+
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function onSubmit() {
+    setLoading(true);
+    setMsg(null);
+
+    const amountGrossCents = parseMoneyToCents(ttc);
+    if (!Number.isFinite(amountGrossCents)) {
+      setMsg("Montant TTC invalide (ex: 25.00 ou 25,00).");
+      setLoading(false);
+      return;
+    }
+
+    const vatRateBp = parseVatRateToBp(vatPct);
+    if (!Number.isFinite(vatRateBp)) {
+      setMsg("TVA invalide (ex: 8.1).");
+      setLoading(false);
+      return;
+    }
+
+    if (!vendor.trim()) {
+      setMsg("Merci d’indiquer un fournisseur / nom.");
+      setLoading(false);
+      return;
+    }
+
+    const payload = {
+      date,
+      vendor: vendor.trim(),
+      category,
+      amountGrossCents,
+      vatRateBp,
+      notes: notes.trim() || null,
     };
-  }, [initial]);
 
-  async function onSubmit(formData: FormData) {
-    setError(null);
-
-    start(async () => {
-      try {
-        if (mode === "edit") {
-          await updateExpense(formData);
-        } else {
-          await createExpense(formData);
-        }
-        onDone?.();
-      } catch (e: any) {
-        setError(e?.message ?? "Erreur");
+    try {
+      if (props.mode === "create") {
+        await createExpense(payload);
+        // reset
+        setVendor("");
+        setCategory("RESTAURANT");
+        setTtc("");
+        setVatPct("8.1");
+        setNotes("");
+      } else {
+        await updateExpense({ id: exp.id, ...payload });
       }
-    });
+      setMsg("✅ Enregistré");
+    } catch (e: any) {
+      setMsg(e?.message || "Erreur");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <form action={onSubmit} className="grid gap-3">
-      {mode === "edit" ? <input type="hidden" name="id" defaultValue={defaults.id} /> : null}
-
-      {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {error}
+    <div className="grid gap-3">
+      {msg ? (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+          {msg}
         </div>
       ) : null}
 
-      <div className="grid gap-1">
-        <label className="text-xs font-semibold text-slate-600">Date</label>
+      <label className="grid gap-1 text-sm">
+        <span className="text-xs font-semibold text-slate-600">Date</span>
         <input
-          name="date"
           type="date"
-          defaultValue={defaults.date}
-          required
-          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-3 py-2"
         />
-      </div>
+      </label>
 
-      <div className="grid gap-1">
-        <label className="text-xs font-semibold text-slate-600">Nom / Fournisseur</label>
+      <label className="grid gap-1 text-sm">
+        <span className="text-xs font-semibold text-slate-600">Fournisseur / Nom</span>
         <input
-          name="vendor"
-          defaultValue={defaults.vendor}
-          required
-          placeholder="ex: Restaurant, Coop, Loyer, Assurance…"
-          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+          value={vendor}
+          onChange={(e) => setVendor(e.target.value)}
+          placeholder="ex: Garage X, Assurance, Loyer, Restaurant…"
+          className="rounded-2xl border border-slate-200 bg-white px-3 py-2"
         />
+      </label>
+
+      <label className="grid gap-1 text-sm">
+        <span className="text-xs font-semibold text-slate-600">Catégorie</span>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="rounded-2xl border border-slate-200 bg-white px-3 py-2"
+        >
+          {CATEGORY_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-sm">
+          <span className="text-xs font-semibold text-slate-600">TTC (CHF)</span>
+          <input
+            value={ttc}
+            onChange={(e) => setTtc(e.target.value)}
+            inputMode="decimal"
+            placeholder="ex: 25,00"
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2"
+          />
+        </label>
+
+        <label className="grid gap-1 text-sm">
+          <span className="text-xs font-semibold text-slate-600">TVA (%)</span>
+          <input
+            value={vatPct}
+            onChange={(e) => setVatPct(e.target.value)}
+            inputMode="decimal"
+            placeholder="8.1"
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-2"
+          />
+        </label>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="grid gap-1">
-          <label className="text-xs font-semibold text-slate-600">Catégorie</label>
-          <select
-            name="category"
-            defaultValue={defaults.category}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-          >
-            {categories.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid gap-1">
-          <label className="text-xs font-semibold text-slate-600">TVA %</label>
-          <select
-            name="vat"
-            defaultValue={defaults.vat}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-          >
-            <option value="0">0%</option>
-            <option value="2.6">2.6%</option>
-            <option value="8.1">8.1%</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid gap-1">
-        <label className="text-xs font-semibold text-slate-600">Montant TTC (CHF)</label>
+      <label className="grid gap-1 text-sm">
+        <span className="text-xs font-semibold text-slate-600">Notes (optionnel)</span>
         <input
-          name="ttc"
-          inputMode="decimal"
-          defaultValue={defaults.ttc}
-          required
-          placeholder="ex: 25.00"
-          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="ex: facture garage, assurance trimestrielle..."
+          className="rounded-2xl border border-slate-200 bg-white px-3 py-2"
         />
-      </div>
-
-      <div className="grid gap-1">
-        <label className="text-xs font-semibold text-slate-600">Notes (optionnel)</label>
-        <input
-          name="notes"
-          defaultValue={defaults.notes}
-          placeholder="ex: repas chantier, parking client…"
-          className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
-        />
-      </div>
+      </label>
 
       <button
-        disabled={pending}
-        className="mt-2 inline-flex items-center justify-center rounded-2xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 disabled:opacity-50"
+        onClick={onSubmit}
+        disabled={loading}
+        className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
       >
-        {pending ? "Enregistrement…" : mode === "edit" ? "Enregistrer" : "Ajouter"}
+        {loading ? "Enregistrement…" : props.mode === "create" ? "Ajouter" : "Enregistrer"}
       </button>
-    </form>
+    </div>
   );
 }

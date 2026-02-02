@@ -16,6 +16,31 @@ function monthKey(d: Date) {
   return `${mm}.${yyyy}`;
 }
 
+const EXPENSE_CATEGORY_LABEL: Record<string, string> = {
+  RESTAURANT: "Restaurant",
+  CARBURANT: "Carburant",
+  PARKING: "Parking",
+  FOURNITURES: "Fournitures",
+  OUTILLAGE: "Outillage",
+  TELEPHONE: "Téléphone",
+  INTERNET: "Internet",
+  TRANSPORT: "Transport",
+  DIVERS: "Divers",
+
+  // ✅ Ajouts demandés
+  LOYER_DEPOT: "Loyer / Dépôt",
+  ASSURANCE_MALADIE: "Assurance maladie",
+  ASSURANCE_LPP: "Assurance LPP",
+  SALAIRE_EMPLOYES: "Salaires employés",
+  SALAIRE_CADRES: "Salaires cadres",
+  GARAGE_REPARATIONS: "Garage / réparations véhicules",
+  ASSURANCE_VEHICULE: "Assurance véhicule",
+};
+
+function catLabel(key: string) {
+  return EXPENSE_CATEGORY_LABEL[key] ?? key;
+}
+
 export default async function ExpensesPage(props: { searchParams?: Promise<any> }) {
   const sp = (await props.searchParams) ?? {};
   const year = Number(sp.year ?? new Date().getFullYear());
@@ -32,7 +57,6 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
   const paidInvoices = await prisma.invoice.findMany({
     where: {
       status: "PAID",
-      // on se base sur paidAt si existant, sinon updatedAt
       OR: [
         { paidAt: { gte: yearStart, lt: yearEnd } },
         { paidAt: null, updatedAt: { gte: yearStart, lt: yearEnd } },
@@ -46,7 +70,10 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
     },
   });
 
-  const paidGross = paidInvoices.reduce((s, i) => s + (i.paidAmountCents ?? i.amountGrossCents), 0);
+  const paidGross = paidInvoices.reduce(
+    (s, i) => s + (i.paidAmountCents ?? i.amountGrossCents),
+    0
+  );
   const paidNet = paidInvoices.reduce((s, i) => s + i.amountNetCents, 0);
   const paidVat = paidInvoices.reduce((s, i) => s + i.amountVatCents, 0);
 
@@ -122,9 +149,7 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold text-slate-600">TVA nette {year}</div>
           <div className="mt-2 text-2xl font-extrabold text-slate-900">{chf(vatNet)}</div>
-          <div className="mt-2 text-sm text-slate-600">
-            (TVA encaissée - TVA payée)
-          </div>
+          <div className="mt-2 text-sm text-slate-600">(TVA encaissée - TVA payée)</div>
         </div>
       </div>
 
@@ -165,7 +190,7 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
                       <td className="py-2 font-semibold text-slate-900">{chf(v.total)}</td>
                       <td className="py-2 text-slate-600">
                         {Object.entries(v.byCat)
-                          .map(([k, cents]) => `${k}: ${chf(cents)}`)
+                          .map(([k, cents]) => `${catLabel(k)}: ${chf(cents)}`)
                           .join(" · ")}
                       </td>
                     </tr>
@@ -205,7 +230,7 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
                   <tr key={e.id} className="border-b last:border-b-0">
                     <td className="py-2">{new Date(e.date as any).toLocaleDateString()}</td>
                     <td className="py-2 font-semibold text-slate-900">{e.vendor}</td>
-                    <td className="py-2">{e.category}</td>
+                    <td className="py-2">{catLabel(e.category)}</td>
                     <td className="py-2 font-semibold text-slate-900">{chf(e.amountGrossCents)}</td>
                     <td className="py-2">{chf(e.amountVatCents)}</td>
                     <td className="py-2">

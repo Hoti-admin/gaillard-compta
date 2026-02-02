@@ -38,6 +38,9 @@ model Invoice {
   clientId String
   client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
+  // ✅ Chantier / référence (optionnel)
+  projectName String?
+
   issueDate DateTime
   dueDate   DateTime
 
@@ -52,7 +55,7 @@ model Invoice {
   status InvoiceStatus @default(OPEN)
   notes  String?
 
-  // ✅ Paiement (pour marquer payé + remise)
+  // Paiement (optionnel)
   paidAt           DateTime?
   paidAmountCents  Int?
   discountRateBp   Int?
@@ -153,13 +156,18 @@ enum ExpenseCategory {
   TELEPHONE
   INTERNET
   TRANSPORT
-  LOYER
-  DEPOT
+  DIVERS
+
+  // ✅ Ajouts
+  LOYER_DEPOT
   ASSURANCE_MALADIE
   ASSURANCE_LPP
-  AUTRE
-  DIVERS
+  SALAIRE_EMPLOYES
+  SALAIRE_CADRES
+  GARAGE_REPARATIONS
+  ASSURANCE_VEHICULE
 }
+
 
 model Expense {
   id String @id @default(cuid())
