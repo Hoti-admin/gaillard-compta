@@ -147,7 +147,7 @@ model BillPayment {
   @@index([date])
 }
 
-enum ExpenseCategory {
+eenum ExpenseCategory {
   RESTAURANT
   CARBURANT
   PARKING
@@ -156,15 +156,17 @@ enum ExpenseCategory {
   TELEPHONE
   INTERNET
   TRANSPORT
-  DIVERS
 
-  LOYER_DEPOT
+  // ✅ NOUVELLES CATÉGORIES
+  LOYER
+  SALAIRE_EMPLOYE
+  SALAIRE_CADRE
   ASSURANCE_MALADIE
   ASSURANCE_LPP
-  SALAIRE_EMPLOYES
-  SALAIRE_CADRES
-  GARAGE_REPARATIONS
   ASSURANCE_VEHICULE
+  REPARATION_VEHICULE
+
+  DIVERS
 }
 
 
@@ -190,3 +192,17 @@ model Expense {
   @@index([category])
   @@index([vendor])
 }
+import { defineConfig, env } from "prisma/config";
+import "dotenv/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: {
+    path: "prisma/migrations",
+  },
+  datasource: {
+    url: env("DATABASE_URL"),
+    // si tu as une URL “direct/unpooled” (souvent utile pour migrations)
+    // directUrl: env("DIRECT_URL"),
+  },
+});
