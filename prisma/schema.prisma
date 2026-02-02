@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum InvoiceStatus {
@@ -38,9 +39,6 @@ model Invoice {
   clientId String
   client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
-  // ✅ Chantier / référence (optionnel)
-  projectName String?
-
   issueDate DateTime
   dueDate   DateTime
 
@@ -55,7 +53,7 @@ model Invoice {
   status InvoiceStatus @default(OPEN)
   notes  String?
 
-  // Paiement (optionnel)
+  // Paiement (pour marquer payé + remise)
   paidAt           DateTime?
   paidAmountCents  Int?
   discountRateBp   Int?
@@ -147,7 +145,7 @@ model BillPayment {
   @@index([date])
 }
 
-eenum ExpenseCategory {
+enum ExpenseCategory {
   RESTAURANT
   CARBURANT
   PARKING
@@ -157,7 +155,6 @@ eenum ExpenseCategory {
   INTERNET
   TRANSPORT
 
-  // ✅ NOUVELLES CATÉGORIES
   LOYER
   SALAIRE_EMPLOYE
   SALAIRE_CADRE
@@ -168,7 +165,6 @@ eenum ExpenseCategory {
 
   DIVERS
 }
-
 
 model Expense {
   id String @id @default(cuid())
@@ -192,17 +188,3 @@ model Expense {
   @@index([category])
   @@index([vendor])
 }
-import { defineConfig, env } from "prisma/config";
-import "dotenv/config";
-
-export default defineConfig({
-  schema: "prisma/schema.prisma",
-  migrations: {
-    path: "prisma/migrations",
-  },
-  datasource: {
-    url: env("DATABASE_URL"),
-    // si tu as une URL “direct/unpooled” (souvent utile pour migrations)
-    // directUrl: env("DIRECT_URL"),
-  },
-});
