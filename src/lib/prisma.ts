@@ -1,16 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
 
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    // Prisma 7: on force l'URL au runtime (Vercel/Supabase)
-    datasources: {
-      db: {
-        url: process.env.DATABASE_URL,
-      },
-    },
+    // logs utiles en dev (tu peux enlever si tu veux)
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "error", "warn"]
+        : ["error"],
   });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
