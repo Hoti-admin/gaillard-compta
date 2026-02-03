@@ -9,7 +9,7 @@ export default defineConfig({
   },
   datasource: {
     url: env("DATABASE_URL"),
-    // Optionnel (recommandé Supabase pour migrations si tu as une URL directe)
-    directUrl: env("DIRECT_URL"),
+    // Si un jour tu as besoin d'une "shadow database":
+    // shadowDatabaseUrl: env("SHADOW_DATABASE_URL"),
   },
 });
