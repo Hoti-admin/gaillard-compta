@@ -42,25 +42,22 @@ model Invoice {
   issueDate DateTime
   dueDate   DateTime
 
-  // ✅ Chantier / projet
   projectName String?
 
-  // TVA
   vatRateBp        Int @default(810)
-  amountGrossCents Int // TTC
-  amountNetCents   Int // HT
-  amountVatCents   Int // TVA
+  amountGrossCents Int
+  amountNetCents   Int
+  amountVatCents   Int
 
   documentPath String?
 
   status InvoiceStatus @default(OPEN)
   notes  String?
 
-  // Paiement (pour marquer payé + remise)
-  paidAt           DateTime?
-  paidAmountCents  Int?
-  discountRateBp   Int?
-  discountCents    Int?
+  paidAt          DateTime?
+  paidAmountCents Int?
+  discountRateBp  Int?
+  discountCents   Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -71,6 +68,7 @@ model Invoice {
   @@index([dueDate])
   @@index([status])
 }
+
 
 model Payment {
   id String @id @default(cuid())
