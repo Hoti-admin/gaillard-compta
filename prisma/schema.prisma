@@ -42,7 +42,8 @@ model Invoice {
   issueDate DateTime
   dueDate   DateTime
 
-  projectName String? // ✅ chantier / projet
+  // ✅ Chantier / Projet
+  projectName String?
 
   // TVA
   vatRateBp        Int @default(810)
@@ -56,10 +57,10 @@ model Invoice {
   notes  String?
 
   // Paiement (pour marquer payé + remise)
-  paidAt          DateTime?
-  paidAmountCents Int?
-  discountRateBp  Int?
-  discountCents   Int?
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  discountRateBp   Int?
+  discountCents    Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -95,7 +96,7 @@ model Supplier {
   address   String?
   createdAt DateTime @default(now())
 
-  bills Bill[]
+  bills     Bill[]
 
   @@index([name])
 }
