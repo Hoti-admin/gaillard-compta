@@ -187,3 +187,34 @@ model Expense {
   @@index([category])
   @@index([vendor])
 }
+model Invoice {
+  id     String @id @default(cuid())
+  number String @unique
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  issueDate DateTime
+  dueDate   DateTime
+
+  projectName String? // ✅ AJOUT ICI
+
+  vatRateBp        Int @default(810)
+  amountGrossCents Int
+  amountNetCents   Int
+  amountVatCents   Int
+
+  documentPath String?
+  status InvoiceStatus @default(OPEN)
+  notes  String?
+
+  paidAt          DateTime?
+  paidAmountCents Int?
+  discountRateBp  Int?
+  discountCents   Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments Payment[]
+}
