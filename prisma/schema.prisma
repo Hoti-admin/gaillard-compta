@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // Prisma 7 : pas de url ici (DATABASE_URL est dans prisma.config.ts)
 }
 
 enum InvoiceStatus {
@@ -41,6 +42,9 @@ model Invoice {
   issueDate DateTime
   dueDate   DateTime
 
+  // ✅ Nom du chantier / projet (affiché dans l’app)
+  projectName String?
+
   // TVA
   vatRateBp        Int @default(810)
   amountGrossCents Int // TTC
@@ -53,10 +57,10 @@ model Invoice {
   notes  String?
 
   // Paiement (pour marquer payé + remise)
-  paidAt           DateTime?
-  paidAmountCents  Int?
-  discountRateBp   Int?
-  discountCents    Int?
+  paidAt          DateTime?
+  paidAmountCents Int?
+  discountRateBp  Int?
+  discountCents   Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -132,7 +136,7 @@ model BillPayment {
   id String @id @default(cuid())
 
   billId String
-  bill   Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
 
   date        DateTime
   amountCents Int
@@ -186,35 +190,4 @@ model Expense {
   @@index([date])
   @@index([category])
   @@index([vendor])
-}
-model Invoice {
-  id     String @id @default(cuid())
-  number String @unique
-
-  clientId String
-  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
-
-  issueDate DateTime
-  dueDate   DateTime
-
-  projectName String? // ✅ AJOUT ICI
-
-  vatRateBp        Int @default(810)
-  amountGrossCents Int
-  amountNetCents   Int
-  amountVatCents   Int
-
-  documentPath String?
-  status InvoiceStatus @default(OPEN)
-  notes  String?
-
-  paidAt          DateTime?
-  paidAmountCents Int?
-  discountRateBp  Int?
-  discountCents   Int?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  payments Payment[]
 }
