@@ -1,10 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
   provider = "postgresql"
-  // Prisma 7 : pas de url ici (DATABASE_URL est dans prisma.config.ts)
 }
 
 enum InvoiceStatus {
@@ -27,7 +27,7 @@ model Client {
   address   String?
   createdAt DateTime @default(now())
 
-  invoices Invoice[]
+  invoices  Invoice[]
 
   @@index([name])
 }
@@ -42,8 +42,7 @@ model Invoice {
   issueDate DateTime
   dueDate   DateTime
 
-  // ✅ Nom du chantier / projet (affiché dans l’app)
-  projectName String?
+  projectName String? // ✅ chantier / projet
 
   // TVA
   vatRateBp        Int @default(810)
@@ -136,7 +135,7 @@ model BillPayment {
   id String @id @default(cuid())
 
   billId String
-  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+  bill   Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
 
   date        DateTime
   amountCents Int
