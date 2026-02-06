@@ -2,45 +2,60 @@
 
 import { prisma } from "@/lib/prisma";
 
-function toCents(input: unknown) {
-  const s = String(input ?? "").trim().replace("CHF", "").replace(/\s/g, "").replace(",", ".");
-  const n = Number(s);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.round(n * 100);
+/**
+ * Création d’un salaire
+ * → stocké comme Expense
+ */
+export async function createSalary(fd: FormData) {
+  try {
+    const employee = String(fd.get("employee") ?? "").trim();
+    const type = String(fd.get("type") ?? "");
+    const dateStr = String(fd.get("date") ?? "");
+    const amountStr = String(fd.get("amount") ?? "").replace(",", ".");
+
+    if (!employee) {
+      return { ok: false, error: "Employé manquant" };
+    }
+
+    const amount = Math.round(Number(amountStr) * 100);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { ok: false, error: "Montant invalide" };
+    }
+
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      return { ok: false, error: "Date invalide" };
+    }
+
+    const category =
+      type === "SALAIRE_CADRE" ? "SALAIRE_CADRE" : "SALAIRE_EMPLOYE";
+
+    await prisma.expense.create({
+      data: {
+        vendor: employee,              // nom employé
+        category,                      // SALAIRE_*
+        date,
+        amountGrossCents: amount,
+        amountNetCents: amount,
+        amountVatCents: 0,             // salaire = pas de TVA
+        vatRateBp: 0,
+      },
+    });
+
+    return { ok: true };
+  } catch (e) {
+    console.error("createSalary error", e);
+    return { ok: false, error: "Erreur serveur" };
+  }
 }
 
-export async function createSalary(formData: FormData) {
-  const employee = String(formData.get("employee") ?? "").trim();
-  const type = String(formData.get("type") ?? "").trim();
-  const dateStr = String(formData.get("date") ?? "").trim();
-  const amountCents = toCents(formData.get("amount"));
-
-  if (!employee) return { ok: false, error: "Nom employé manquant" };
-  if (!["SALAIRE_EMPLOYE", "SALAIRE_CADRE"].includes(type))
-    return { ok: false, error: "Type salaire invalide" };
-  if (!dateStr) return { ok: false, error: "Date manquante" };
-  if (amountCents == null) return { ok: false, error: "Montant invalide" };
-
-  await prisma.expense.create({
-    data: {
-      date: new Date(dateStr),
-      vendor: employee,
-      category: type as any,
-
-      // Salaire: pas de TVA
-      vatRateBp: 0,
-      amountGrossCents: amountCents,
-      amountNetCents: amountCents,
-      amountVatCents: 0,
-
-      notes: "Salaire",
-    },
-  });
-
-  return { ok: true };
-}
-
+/**
+ * Suppression d’un salaire
+ */
 export async function deleteSalary(id: string) {
-  await prisma.expense.delete({ where: { id } });
-  return { ok: true };
+  if (!id) return;
+
+  await prisma.expense.delete({
+    where: { id },
+  });
 }
