@@ -1,11 +1,13 @@
-// src/app/clients/page.tsx
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import AddInvoiceCard from "./AddInvoiceCard";
 
 export const dynamic = "force-dynamic";
 
+function chf(cents: number) {
+  return `${(cents / 100).toFixed(2)} CHF`;
+}
+
 export default async function ClientsPage() {
+  // ✅ requête safe: uniquement champs garantis dans ton schema
   const clients = await prisma.client.findMany({
     orderBy: { name: "asc" },
     select: {
@@ -13,105 +15,96 @@ export default async function ClientsPage() {
       name: true,
       email: true,
       phone: true,
-      invoices: {
-        orderBy: { issueDate: "desc" },
-        take: 3,
-        select: {
-          id: true,
-          number: true,
-          status: true,
-          amountGrossCents: true,
-          issueDate: true,
-          projectName: true,
-        },
-      },
+      address: true,
+      createdAt: true,
+
+      // ⚠️ On évite d'inclure invoices au début pour ne pas planter si select mauvais
+      // On calcule des stats via une requête séparée
     },
   });
 
-  // ⚠️ Dans cette version, on affiche le formulaire pour le 1er client.
-  // (Sinon il faut un select client côté client component.)
-  const first = clients[0] ?? null;
+  const clientIds = clients.map((c) => c.id);
+
+  // ✅ stats safe via groupBy (si table invoice existe)
+  const invAgg = clientIds.length
+    ? await prisma.invoice.groupBy({
+        by: ["clientId"],
+        where: { clientId: { in: clientIds }, status: { not: "CANCELED" } },
+        _count: { _all: true },
+        _sum: { amountGrossCents: true },
+      })
+    : [];
+
+  const byClient = new Map(
+    invAgg.map((x) => [
+      x.clientId,
+      {
+        count: x._count._all,
+        sum: x._sum.amountGrossCents ?? 0,
+      },
+    ])
+  );
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-extrabold text-slate-900">Clients</h1>
-        <Link
-          href="/"
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
-        >
-          ← Dashboard
-        </Link>
-      </div>
-
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        {/* ✅ Ajout facture */}
+    <div className="mx-auto w-full max-w-6xl px-4 py-8">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          {first ? (
-            <AddInvoiceCard clientId={first.id} clientName={first.name} />
-          ) : (
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-lg font-extrabold text-slate-900">Ajouter une facture</div>
-              <div className="mt-2 text-sm text-slate-600">Aucun client pour l’instant.</div>
-            </div>
-          )}
-
-          <div className="mt-3 text-xs text-slate-500">
-            Si tu veux choisir le client avant d’ajouter la facture, dis-moi et je te fais un
-            select déroulant (mobile friendly).
+          <div className="text-3xl font-extrabold tracking-tight text-slate-900">
+            Clients
+          </div>
+          <div className="mt-1 text-sm text-slate-600">
+            Liste des clients + total facturé (hors annulées)
           </div>
         </div>
+      </div>
 
-        {/* ✅ Liste clients */}
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-lg font-extrabold text-slate-900">Liste des clients</div>
+      <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
+            <tr>
+              <th className="px-3 py-2 text-left">Client</th>
+              <th className="px-3 py-2 text-left">Contact</th>
+              <th className="px-3 py-2 text-right">Nb factures</th>
+              <th className="px-3 py-2 text-right">Total facturé</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clients.length ? (
+              clients.map((c) => {
+                const agg = byClient.get(c.id) ?? { count: 0, sum: 0 };
+                const contact = [c.email, c.phone].filter(Boolean).join(" · ");
 
-          {clients.length === 0 ? (
-            <div className="mt-4 text-sm text-slate-600">Aucun client.</div>
-          ) : (
-            <div className="mt-4 grid gap-3">
-              {clients.map((c) => (
-                <div key={c.id} className="rounded-2xl border border-slate-200 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-slate-900">{c.name}</div>
-                      <div className="mt-1 text-xs text-slate-600">
-                        {c.email ? <span>{c.email}</span> : null}
-                        {c.email && c.phone ? <span> • </span> : null}
-                        {c.phone ? <span>{c.phone}</span> : null}
-                      </div>
-                    </div>
-
-                    {/* Si tu as /clients/[id] */}
-                    <Link
-                      className="text-sm font-semibold text-blue-700 underline"
-                      href={`/clients/${c.id}`}
-                    >
-                      Ouvrir
-                    </Link>
-                  </div>
-
-                  {c.invoices.length > 0 ? (
-                    <div className="mt-3 text-xs text-slate-600">
-                      Dernières factures :
-                      <ul className="mt-1 list-disc pl-5">
-                        {c.invoices.map((inv) => (
-                          <li key={inv.id}>
-                            {inv.number} — CHF {(inv.amountGrossCents / 100).toFixed(2)} —{" "}
-                            {inv.status}
-                            {inv.projectName ? ` — ${inv.projectName}` : ""}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <div className="mt-3 text-xs text-slate-500">Aucune facture.</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                return (
+                  <tr key={c.id} className="border-t border-slate-200">
+                    <td className="px-3 py-2 font-semibold text-slate-900">
+                      {c.name}
+                      {c.address ? (
+                        <div className="text-xs font-normal text-slate-500">
+                          {c.address}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-slate-700">
+                      {contact || <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-900">
+                      {agg.count}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                      {chf(agg.sum)}
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={4} className="px-3 py-3 text-slate-500">
+                  Aucun client.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
