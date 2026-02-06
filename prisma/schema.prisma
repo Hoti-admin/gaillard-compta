@@ -198,3 +198,11 @@ model Expense {
   @@index([category])
   @@index([vendor])
 }
+model Salary {
+  id           String   @id @default(cuid())
+  employee     String
+  month        String   // format YYYY-MM (ex: 2025-01)
+  amountCents  Int
+
+  createdAt    DateTime @default(now())
+}
