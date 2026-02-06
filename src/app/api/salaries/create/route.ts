@@ -3,88 +3,78 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
+function parseIntSafe(v: any) {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? Math.round(n) : NaN;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
     const employeeId = String(body.employeeId ?? "");
-    const year = Number(body.year);
-    const month = Number(body.month);
+    const monthStr = String(body.month ?? ""); // attendu: "2026-02" par ex.
+    const gross = parseIntSafe(body.grossCents);
+    const charges = parseIntSafe(body.chargesCents);
+    const net = parseIntSafe(body.netCents);
 
-    const grossCents = Number(body.grossCents);
-    const chargesCents = Number(body.chargesCents);
-    const netCents = Number(body.netCents);
-    const notes = (body.notes ?? null) as string | null;
-
-    if (!employeeId) return NextResponse.json({ error: "employeeId manquant" }, { status: 400 });
-    if (!Number.isInteger(year) || year < 2000) return NextResponse.json({ error: "Année invalide" }, { status: 400 });
-    if (!Number.isInteger(month) || month < 1 || month > 12) return NextResponse.json({ error: "Mois invalide" }, { status: 400 });
-
-    for (const [k, v] of [
-      ["grossCents", grossCents],
-      ["chargesCents", chargesCents],
-      ["netCents", netCents],
-    ] as const) {
-      if (!Number.isFinite(v) || v < 0) return NextResponse.json({ error: `${k} invalide` }, { status: 400 });
+    if (!employeeId) {
+      return NextResponse.json({ error: "employeeId manquant" }, { status: 400 });
+    }
+    if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) {
+      return NextResponse.json({ error: "month invalide (format YYYY-MM)" }, { status: 400 });
+    }
+    if (!Number.isFinite(gross) || gross < 0) {
+      return NextResponse.json({ error: "grossCents invalide" }, { status: 400 });
+    }
+    if (!Number.isFinite(charges) || charges < 0) {
+      return NextResponse.json({ error: "chargesCents invalide" }, { status: 400 });
+    }
+    if (!Number.isFinite(net) || net < 0) {
+      return NextResponse.json({ error: "netCents invalide" }, { status: 400 });
     }
 
+    // month = 1er jour du mois en UTC
+    const month = new Date(`${monthStr}-01T00:00:00.000Z`);
+
+    // ✅ Ici on ne sélectionne que des champs existants
     const emp = await prisma.employee.findUnique({
       where: { id: employeeId },
-      select: { id: true, name: true, type: true },
-    });
-    if (!emp) return NextResponse.json({ error: "Employé introuvable" }, { status: 404 });
-
-    // ✅ Upsert salaire
-    const salary = await prisma.salary.upsert({
-      where: { employeeId_year_month: { employeeId, year, month } },
-      update: { grossCents, chargesCents, netCents, notes },
-      create: { employeeId, year, month, grossCents, chargesCents, netCents, notes },
+      select: { id: true, name: true },
     });
 
-    // ✅ Créer / mettre à jour une dépense liée
-    const category = emp.type === "CADRE" ? "SALAIRE_CADRE" : "SALAIRE_EMPLOYE";
-    const totalCostCents = grossCents + chargesCents;
-
-    const date = new Date(Date.UTC(year, month - 1, 1)); // 1er du mois (UTC)
-
-    // Si une expense existe déjà liée -> update, sinon create
-    const existingExpense = await prisma.expense.findFirst({
-      where: { salaryId: salary.id },
-      select: { id: true },
-    });
-
-    if (existingExpense) {
-      await prisma.expense.update({
-        where: { id: existingExpense.id },
-        data: {
-          date,
-          vendor: emp.name,
-          category: category as any,
-          vatRateBp: 0,
-          amountGrossCents: totalCostCents,
-          amountNetCents: totalCostCents,
-          amountVatCents: 0,
-          notes: `Salaire ${String(month).padStart(2, "0")}.${year}${notes ? ` · ${notes}` : ""}`,
-        },
-      });
-    } else {
-      await prisma.expense.create({
-        data: {
-          date,
-          vendor: emp.name,
-          category: category as any,
-          vatRateBp: 0,
-          amountGrossCents: totalCostCents,
-          amountNetCents: totalCostCents,
-          amountVatCents: 0,
-          notes: `Salaire ${String(month).padStart(2, "0")}.${year}${notes ? ` · ${notes}` : ""}`,
-          salaryId: salary.id,
-        },
-      });
+    if (!emp) {
+      return NextResponse.json({ error: "Employé introuvable" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true });
+    // upsert => 1 salaire par employé et par mois
+    const salary = await prisma.salary.upsert({
+      where: {
+        employeeId_month: {
+          employeeId,
+          month,
+        },
+      },
+      create: {
+        employeeId,
+        month,
+        grossCents: gross,
+        chargesCents: charges,
+        netCents: net,
+      },
+      update: {
+        grossCents: gross,
+        chargesCents: charges,
+        netCents: net,
+      },
+    });
+
+    return NextResponse.json({ ok: true, salary });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Erreur serveur" }, { status: 500 });
+    console.error(e);
+    return NextResponse.json(
+      { error: "Erreur serveur (create salary)" },
+      { status: 500 }
+    );
   }
 }
