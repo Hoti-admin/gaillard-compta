@@ -15,7 +15,6 @@ export async function POST(req: Request) {
     await prisma.employee.create({
       data: {
         name,
-        active: true,
       },
     });
 
