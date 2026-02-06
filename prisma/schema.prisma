@@ -29,14 +29,21 @@ enum ExpenseCategory {
   TRANSPORT
   DIVERS
 
+  // ✅ legacy (pour éviter crash si DB contient encore ça)
+  AUTRE
+  LOYER
+  DEPOT
+
+  // ✅ nouvelles catégories
   LOYER_DEPOT
   ASSURANCE_MALADIE
   ASSURANCE_LPP
-  ASSURANCE_VEHICULE
-  GARAGE_REPARATIONS
   SALAIRE_EMPLOYES
   SALAIRE_CADRES
+  GARAGE_REPARATIONS
+  ASSURANCE_VEHICULE
 }
+
 
 model Client {
   id        String   @id @default(cuid())
