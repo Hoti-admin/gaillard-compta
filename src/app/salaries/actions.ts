@@ -2,42 +2,31 @@
 
 import { prisma } from "@/lib/prisma";
 
-/**
- * Création d’un salaire
- * → stocké comme Expense
- */
 export async function createSalary(fd: FormData) {
   try {
     const employee = String(fd.get("employee") ?? "").trim();
-    const type = String(fd.get("type") ?? "");
+    const type = String(fd.get("type") ?? "SALAIRE_EMPLOYE");
     const dateStr = String(fd.get("date") ?? "");
     const amountStr = String(fd.get("amount") ?? "").replace(",", ".");
 
-    if (!employee) {
-      return { ok: false, error: "Employé manquant" };
-    }
+    if (!employee) return { ok: false, error: "Employé manquant" };
 
-    const amount = Math.round(Number(amountStr) * 100);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return { ok: false, error: "Montant invalide" };
-    }
+    const cents = Math.round(Number(amountStr) * 100);
+    if (!Number.isFinite(cents) || cents <= 0) return { ok: false, error: "Montant invalide" };
 
     const date = new Date(dateStr);
-    if (isNaN(date.getTime())) {
-      return { ok: false, error: "Date invalide" };
-    }
+    if (isNaN(date.getTime())) return { ok: false, error: "Date invalide" };
 
-    const category =
-      type === "SALAIRE_CADRE" ? "SALAIRE_CADRE" : "SALAIRE_EMPLOYE";
+    const category = type === "SALAIRE_CADRE" ? "SALAIRE_CADRE" : "SALAIRE_EMPLOYE";
 
     await prisma.expense.create({
       data: {
-        vendor: employee,              // nom employé
-        category,                      // SALAIRE_*
+        vendor: employee,
+        category: category as any,
         date,
-        amountGrossCents: amount,
-        amountNetCents: amount,
-        amountVatCents: 0,             // salaire = pas de TVA
+        amountGrossCents: cents,
+        amountNetCents: cents,
+        amountVatCents: 0,
         vatRateBp: 0,
       },
     });
@@ -49,13 +38,11 @@ export async function createSalary(fd: FormData) {
   }
 }
 
-/**
- * Suppression d’un salaire
- */
 export async function deleteSalary(id: string) {
-  if (!id) return;
-
-  await prisma.expense.delete({
-    where: { id },
-  });
+  try {
+    if (!id) return;
+    await prisma.expense.delete({ where: { id } });
+  } catch (e) {
+    console.error("deleteSalary error", e);
+  }
 }

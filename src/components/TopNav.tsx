@@ -10,7 +10,7 @@ const NAV = [
   { href: "/suppliers", label: "Fournisseurs" },
   { href: "/bills", label: "Achats" },
   { href: "/expenses", label: "Dépenses" },
-  { href: "/salaries", label: "Salaires" }, // ✅ AJOUT
+  { href: "/salaries", label: "Salaires" }, // ✅
 ];
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -33,9 +33,7 @@ export default function TopNav() {
             href={item.href}
             className={cx(
               "rounded-2xl px-3 py-2 text-sm font-semibold transition",
-              active
-                ? "bg-slate-900 text-white shadow-sm"
-                : "text-slate-700 hover:bg-slate-100"
+              active ? "bg-slate-900 text-white shadow-sm" : "text-slate-700 hover:bg-slate-100"
             )}
           >
             {item.label}
@@ -43,7 +41,6 @@ export default function TopNav() {
         );
       })}
 
-      {/* Export Excel Dépenses */}
       <a
         href={exportExpensesHref}
         className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
@@ -52,7 +49,6 @@ export default function TopNav() {
         Export Dépenses Excel
       </a>
 
-      {/* Auth */}
       <div className="mx-1 h-6 w-px bg-slate-200" />
 
       <Link
