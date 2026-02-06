@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // Prisma 7: plus de url ici (elle est dans prisma.config.ts)
 }
 
 enum InvoiceStatus {
@@ -18,6 +17,27 @@ enum BillStatus {
   PAID
   CANCELED
 }
+eenum ExpenseCategory {
+  RESTAURANT
+  CARBURANT
+  PARKING
+  FOURNITURES
+  OUTILLAGE
+  TELEPHONE
+  INTERNET
+  TRANSPORT
+
+  LOYER
+  SALAIRE_EMPLOYE
+  SALAIRE_CADRE
+  ASSURANCE_MALADIE
+  ASSURANCE_LPP
+  ASSURANCE_VEHICULE
+  REPARATION_VEHICULE
+
+  DIVERS
+  AUTRE
+}
 
 model Client {
   id        String   @id @default(cuid())
@@ -27,7 +47,7 @@ model Client {
   address   String?
   createdAt DateTime @default(now())
 
-  invoices  Invoice[]
+  invoices Invoice[]
 
   @@index([name])
 }
@@ -42,7 +62,7 @@ model Invoice {
   issueDate DateTime
   dueDate   DateTime
 
-  projectName String?
+  projectName String? // ✅ ajouté ici (une seule fois)
 
   vatRateBp        Int @default(810)
   amountGrossCents Int
@@ -54,10 +74,10 @@ model Invoice {
   status InvoiceStatus @default(OPEN)
   notes  String?
 
-  paidAt          DateTime?
-  paidAmountCents Int?
-  discountRateBp  Int?
-  discountCents   Int?
+  paidAt           DateTime?
+  paidAmountCents  Int?
+  discountRateBp   Int?
+  discountCents    Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -68,7 +88,6 @@ model Invoice {
   @@index([dueDate])
   @@index([status])
 }
-
 
 model Payment {
   id String @id @default(cuid())
@@ -94,7 +113,7 @@ model Supplier {
   address   String?
   createdAt DateTime @default(now())
 
-  bills     Bill[]
+  bills Bill[]
 
   @@index([name])
 }
@@ -109,7 +128,6 @@ model Bill {
   issueDate DateTime
   dueDate   DateTime
 
-  // TVA
   vatRateBp        Int @default(810)
   amountGrossCents Int
   amountNetCents   Int
@@ -144,27 +162,6 @@ model BillPayment {
 
   @@index([billId])
   @@index([date])
-}
-
-enum ExpenseCategory {
-  RESTAURANT
-  CARBURANT
-  PARKING
-  FOURNITURES
-  OUTILLAGE
-  TELEPHONE
-  INTERNET
-  TRANSPORT
-
-  LOYER
-  SALAIRE_EMPLOYE
-  SALAIRE_CADRE
-  ASSURANCE_MALADIE
-  ASSURANCE_LPP
-  ASSURANCE_VEHICULE
-  REPARATION_VEHICULE
-
-  DIVERS
 }
 
 model Expense {
