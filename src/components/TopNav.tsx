@@ -19,7 +19,6 @@ function cx(...classes: Array<string | false | null | undefined>) {
 
 export default function TopNav() {
   const pathname = usePathname();
-
   const year = new Date().getFullYear();
   const exportExpensesHref = `/api/exports/expenses.xlsx?year=${year}`;
 

@@ -18,6 +18,27 @@ enum BillStatus {
   CANCELED
 }
 
+enum ExpenseCategory {
+  RESTAURANT
+  CARBURANT
+  PARKING
+  FOURNITURES
+  OUTILLAGE
+  TELEPHONE
+  INTERNET
+  TRANSPORT
+
+  LOYER
+  SALAIRE_EMPLOYE
+  SALAIRE_CADRE
+  ASSURANCE_MALADIE
+  ASSURANCE_LPP
+  ASSURANCE_VEHICULE
+  REPARATION_VEHICULE
+
+  DIVERS
+}
+
 model Client {
   id        String   @id @default(cuid())
   name      String
@@ -143,39 +164,6 @@ model BillPayment {
   @@index([date])
 }
 
-/**
- * ✅ IMPORTANT :
- * On inclut ici toutes les valeurs possibles qui peuvent exister dans la DB.
- * Sinon Prisma plante (ex: AUTRE, SALAIRE_EMPLOYES, etc).
- */
-enum ExpenseCategory {
-  RESTAURANT
-  CARBURANT
-  PARKING
-  FOURNITURES
-  OUTILLAGE
-  TELEPHONE
-  INTERNET
-  TRANSPORT
-
-  LOYER
-  SALAIRE_EMPLOYE
-  SALAIRE_CADRE
-  ASSURANCE_MALADIE
-  ASSURANCE_LPP
-  ASSURANCE_VEHICULE
-  REPARATION_VEHICULE
-
-  DIVERS
-
-  // ✅ alias “anciens” / variations possibles déjà vues dans ton code
-  AUTRE
-  LOYER_DEPOT
-  SALAIRE_EMPLOYES
-  SALAIRE_CADRES
-  GARAGE_REPARATIONS
-}
-
 model Expense {
   id String @id @default(cuid())
 
@@ -194,17 +182,54 @@ model Expense {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  salaryId String?
+  salary   Salary? @relation(fields: [salaryId], references: [id], onDelete: SetNull)
+
   @@index([date])
   @@index([category])
   @@index([vendor])
+  @@index([salaryId])
 }
+
+enum EmployeeType {
+  EMPLOYE
+  CADRE
+}
+
+model Employee {
+  id        String       @id @default(cuid())
+  name      String
+  type      EmployeeType @default(EMPLOYE)
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+
+  salaries Salary[]
+
+  @@index([name])
+  @@index([active])
+}
+
 model Salary {
-  id          String   @id @default(cuid())
-  employee    String
-  month       String
-  amountCents Int
-  createdAt   DateTime @default(now())
+  id String @id @default(cuid())
 
-  @@unique([employee, month], name: "employee_month")
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  year  Int
+  month Int // 1..12
+
+  grossCents   Int
+  chargesCents Int
+  netCents     Int
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expense Expense?
+
+  @@unique([employeeId, year, month])
+  @@index([year, month])
+  @@index([employeeId])
 }
-
