@@ -10,16 +10,16 @@ function parseMoneyToCents(input: unknown): number | null {
   if (typeof input === "string") {
     let s = input.trim();
 
-    // enlève CHF, espaces, etc.
+    // enlève CHF et texte
     s = s.replace(/chf/gi, "").trim();
 
-    // enlève espaces et séparateurs de milliers (espace, apostrophe)
+    // enlève espaces et séparateurs de milliers
     s = s.replace(/\s+/g, "").replace(/'/g, "");
 
-    // transforme virgule en point
+    // virgule -> point
     s = s.replace(",", ".");
 
-    // garde uniquement chiffres + point + signe
+    // garde chiffres + point + signe
     s = s.replace(/[^0-9.-]/g, "");
 
     const n = Number(s);
@@ -31,34 +31,87 @@ function parseMoneyToCents(input: unknown): number | null {
   return null;
 }
 
+function pickGrossCents(body: any): { grossCents: number | null; pickedFrom: string } {
+  // 1) cents direct (déjà en centimes)
+  const centsKeys = ["amountGrossCents", "grossCents", "ttcCents", "montantTtcCents"];
+  for (const k of centsKeys) {
+    const v = body?.[k];
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return { grossCents: Math.round(v), pickedFrom: k };
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) return { grossCents: Math.round(n), pickedFrom: k };
+    }
+  }
+
+  // 2) montant en CHF (string/number)
+  const chfKeys = ["amountGross", "amount", "ttc", "montantTtc", "amountGrossChf", "amountGrossCHF"];
+  for (const k of chfKeys) {
+    const v = body?.[k];
+    const cents = parseMoneyToCents(v);
+    if (cents && cents > 0) return { grossCents: cents, pickedFrom: k };
+  }
+
+  // 3) nested éventuellement
+  const nested = body?.data ?? body?.payload ?? null;
+  if (nested) {
+    for (const k of [...centsKeys, ...chfKeys]) {
+      const v = nested?.[k];
+      const cents =
+        centsKeys.includes(k)
+          ? (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : Number.isFinite(Number(v)) ? Math.round(Number(v)) : null)
+          : parseMoneyToCents(v);
+
+      if (cents && cents > 0) return { grossCents: cents, pickedFrom: `nested:${k}` };
+    }
+  }
+
+  return { grossCents: null, pickedFrom: "none" };
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const {
-      clientId,
-      number,
-      issueDate,
-      dueDate,
-      vatRateBp,     // ex: 810
-      amountGross,   // ex: "482,65" ou 482.65
-    } = body;
+    const clientId = body?.clientId ?? body?.data?.clientId ?? body?.payload?.clientId;
+    const number = body?.number ?? body?.data?.number ?? body?.payload?.number;
+    const issueDate = body?.issueDate ?? body?.data?.issueDate ?? body?.payload?.issueDate;
+    const dueDate = body?.dueDate ?? body?.data?.dueDate ?? body?.payload?.dueDate;
 
-    const grossCents = parseMoneyToCents(amountGross);
+    const vatRateBpRaw = body?.vatRateBp ?? body?.tvaBp ?? body?.vatBp ?? body?.data?.vatRateBp ?? body?.payload?.vatRateBp ?? 810;
+    const vatBp = Number(vatRateBpRaw);
 
+    const { grossCents, pickedFrom } = pickGrossCents(body);
+
+    // ✅ DEBUG TEMPORAIRE : si invalide, on renvoie le payload reçu
     if (!grossCents || grossCents <= 0) {
       return NextResponse.json(
-        { error: "Montant TTC invalide", received: amountGross },
+        {
+          error: "Montant TTC invalide",
+          debug: {
+            pickedFrom,
+            receivedKeys: Object.keys(body ?? {}),
+            receivedBody: body,
+          },
+        },
         { status: 400 }
       );
     }
 
-    const vatBp = Number(vatRateBp ?? 0);
-    if (!Number.isFinite(vatBp) || vatBp < 0 || vatBp > 5000) {
-      return NextResponse.json({ error: "TVA invalide" }, { status: 400 });
+    if (!clientId || !number || !issueDate || !dueDate) {
+      return NextResponse.json(
+        {
+          error: "Champs manquants",
+          debug: { clientId, number, issueDate, dueDate, receivedBody: body },
+        },
+        { status: 400 }
+      );
     }
 
-    // TVA incluse: TVA = TTC * taux / (100% + taux)
+    if (!Number.isFinite(vatBp) || vatBp < 0 || vatBp > 5000) {
+      return NextResponse.json({ error: "TVA invalide", debug: { vatRateBpRaw } }, { status: 400 });
+    }
+
+    // TVA incluse : TVA = TTC * taux / (100% + taux)
     const vatCents = Math.round((grossCents * vatBp) / (10000 + vatBp));
     const netCents = grossCents - vatCents;
 
@@ -81,9 +134,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, invoice });
   } catch (err) {
     console.error("CREATE INVOICE ERROR", err);
-    return NextResponse.json(
-      { error: "Erreur serveur création facture" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Erreur serveur création facture" }, { status: 500 });
   }
 }
