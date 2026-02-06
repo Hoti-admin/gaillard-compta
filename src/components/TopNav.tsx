@@ -10,6 +10,7 @@ const NAV = [
   { href: "/suppliers", label: "Fournisseurs" },
   { href: "/bills", label: "Achats" },
   { href: "/expenses", label: "Dépenses" },
+  { href: "/salaries", label: "Salaires" }, // ✅ AJOUT
 ];
 
 function cx(...classes: Array<string | false | null | undefined>) {

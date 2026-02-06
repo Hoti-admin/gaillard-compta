@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import SalaryFormClient from "./SalaryFormClient";
 import { deleteSalary } from "./actions";
@@ -14,6 +15,22 @@ function yyyyMm(d: Date) {
   const y = x.getFullYear();
   const m = String(x.getMonth() + 1).padStart(2, "0");
   return `${y}-${m}`;
+}
+
+function monthLabel(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  return d.toLocaleDateString("fr-CH", { month: "long", year: "numeric" });
+}
+
+function getLastMonths(count = 12) {
+  const res: string[] = [];
+  const now = new Date();
+  for (let i = 0; i < count; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    res.push(yyyyMm(d));
+  }
+  return res;
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -42,15 +59,15 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
 
   const total = salaries.reduce((s, e) => s + e.amountGrossCents, 0);
 
+  const months = getLastMonths(12);
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-3xl font-extrabold tracking-tight text-slate-900">
-            Salaires
-          </div>
+          <div className="text-3xl font-extrabold tracking-tight text-slate-900">Salaires</div>
           <div className="mt-1 text-sm text-slate-600">
-            Saisie des salaires (enregistrés comme dépenses)
+            Clique un mois · Ajoute les salaires · Total automatique
           </div>
         </div>
 
@@ -67,29 +84,47 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
         </form>
       </div>
 
+      {/* ✅ Mois cliquables */}
+      <div className="mt-5 flex flex-wrap gap-2">
+        {months.map((m) => {
+          const active = m === ym;
+          return (
+            <Link
+              key={m}
+              href={`/salaries?ym=${m}`}
+              className={[
+                "rounded-2xl px-3 py-2 text-sm font-semibold transition",
+                active
+                  ? "bg-blue-700 text-white shadow-sm"
+                  : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+              ].join(" ")}
+            >
+              {monthLabel(m)}
+            </Link>
+          );
+        })}
+      </div>
+
       <div className="mt-6 grid gap-3 lg:grid-cols-3">
         {/* Formulaire */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-lg font-extrabold text-slate-900">+ Ajouter un salaire</div>
-          <div className="mt-1 text-xs text-slate-500">
-            Astuce : mets la date au dernier jour du mois.
-          </div>
+          <div className="mt-1 text-xs text-slate-500">Mois sélectionné : {monthLabel(ym)}</div>
+
           <div className="mt-4">
             <SalaryFormClient defaultYm={ym} />
           </div>
         </div>
 
-        {/* Résumé */}
+        {/* Tableau */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="text-lg font-extrabold text-slate-900">
-                Résumé du mois
-              </div>
-              <div className="text-xs text-slate-500">{ym}</div>
+              <div className="text-lg font-extrabold text-slate-900">Résumé</div>
+              <div className="text-xs text-slate-500">{monthLabel(ym)}</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm">
-              Total salaires : <span className="font-extrabold">{chf(total)}</span>
+              Total : <span className="font-extrabold">{chf(total)}</span>
             </div>
           </div>
 
@@ -108,15 +143,13 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
                 {salaries.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-4 text-slate-600">
-                      Aucun salaire sur {ym}.
+                      Aucun salaire sur {monthLabel(ym)}.
                     </td>
                   </tr>
                 ) : (
                   salaries.map((s) => (
                     <tr key={s.id} className="border-b last:border-b-0">
-                      <td className="py-2">
-                        {new Date(s.date as any).toLocaleDateString()}
-                      </td>
+                      <td className="py-2">{new Date(s.date as any).toLocaleDateString()}</td>
                       <td className="py-2 font-semibold text-slate-900">{s.vendor}</td>
                       <td className="py-2 text-slate-700">
                         {CATEGORY_LABEL[String(s.category)] ?? String(s.category)}
@@ -144,7 +177,7 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
           </div>
 
           <div className="mt-3 text-xs text-slate-500">
-            * Ces entrées sont stockées dans <b>Dépenses</b> (Expense) avec catégorie SALAIRE_*.
+            * Stocké dans Dépenses (Expense) avec catégorie SALAIRE_EMPLOYE / SALAIRE_CADRE.
           </div>
         </div>
       </div>
