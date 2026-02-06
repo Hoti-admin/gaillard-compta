@@ -182,13 +182,13 @@ model Expense {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  salaryId String?
+  // ✅ 1 salaire -> 1 dépense : salaryId doit être UNIQUE
+  salaryId String? @unique
   salary   Salary? @relation(fields: [salaryId], references: [id], onDelete: SetNull)
 
   @@index([date])
   @@index([category])
   @@index([vendor])
-  @@index([salaryId])
 }
 
 enum EmployeeType {
