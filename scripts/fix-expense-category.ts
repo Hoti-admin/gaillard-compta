@@ -1,12 +1,15 @@
-import { prisma } from "../src/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 async function main() {
-  const res = await prisma.expense.updateMany({
-    where: { category: "AUTRE" },
-    data: { category: "DIVERS" },
-  });
+  // ✅ On évite le type enum Prisma (AUTRE n'existe plus)
+  // On met à jour via SQL brut
+  const res = await prisma.$executeRawUnsafe(`
+    UPDATE "Expense"
+    SET "category" = 'DIVERS'
+    WHERE "category" = 'AUTRE';
+  `);
 
-  console.log("Updated expenses:", res.count);
+  console.log("Updated rows:", res);
 }
 
 main()
