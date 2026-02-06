@@ -17,7 +17,8 @@ enum BillStatus {
   PAID
   CANCELED
 }
-eenum ExpenseCategory {
+
+enum ExpenseCategory {
   RESTAURANT
   CARBURANT
   PARKING
@@ -62,7 +63,7 @@ model Invoice {
   issueDate DateTime
   dueDate   DateTime
 
-  projectName String? // ✅ ajouté ici (une seule fois)
+  projectName String?
 
   vatRateBp        Int @default(810)
   amountGrossCents Int
@@ -74,10 +75,10 @@ model Invoice {
   status InvoiceStatus @default(OPEN)
   notes  String?
 
-  paidAt           DateTime?
-  paidAmountCents  Int?
-  discountRateBp   Int?
-  discountCents    Int?
+  paidAt          DateTime?
+  paidAmountCents Int?
+  discountRateBp  Int?
+  discountCents   Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
