@@ -1,7 +1,6 @@
-// src/lib/expenseCategories.ts
-import { ExpenseCategory } from "@prisma/client";
+import type { ExpenseCategory } from "@prisma/client";
 
-export const expenseCategories: { value: ExpenseCategory; label: string }[] = [
+export const EXPENSE_CATEGORIES: Array<{ value: ExpenseCategory; label: string }> = [
   { value: "RESTAURANT", label: "Restaurant" },
   { value: "CARBURANT", label: "Carburant" },
   { value: "PARKING", label: "Parking" },
@@ -10,15 +9,13 @@ export const expenseCategories: { value: ExpenseCategory; label: string }[] = [
   { value: "TELEPHONE", label: "Téléphone" },
   { value: "INTERNET", label: "Internet" },
   { value: "TRANSPORT", label: "Transport" },
+  { value: "DIVERS", label: "Divers" },
 
-  { value: "LOYER", label: "Loyer" },
-  { value: "SALAIRE_EMPLOYE", label: "Salaire employé" },
-  { value: "SALAIRE_CADRE", label: "Salaire cadre" },
+  { value: "LOYER_DEPOT", label: "Loyer / Dépôt" },
   { value: "ASSURANCE_MALADIE", label: "Assurance maladie" },
   { value: "ASSURANCE_LPP", label: "Assurance LPP" },
+  { value: "SALAIRE_EMPLOYES", label: "Salaires employés" },
+  { value: "SALAIRE_CADRES", label: "Salaires cadres" },
+  { value: "GARAGE_REPARATIONS", label: "Garage / réparations véhicules" },
   { value: "ASSURANCE_VEHICULE", label: "Assurance véhicule" },
-  { value: "REPARATION_VEHICULE", label: "Réparation véhicule" },
-
-  { value: "DIVERS", label: "Divers" },
-  { value: "AUTRE", label: "Autre" },
 ];
