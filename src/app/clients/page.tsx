@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -7,7 +8,6 @@ function chf(cents: number) {
 }
 
 export default async function ClientsPage() {
-  // ✅ requête safe: uniquement champs garantis dans ton schema
   const clients = await prisma.client.findMany({
     orderBy: { name: "asc" },
     select: {
@@ -17,15 +17,11 @@ export default async function ClientsPage() {
       phone: true,
       address: true,
       createdAt: true,
-
-      // ⚠️ On évite d'inclure invoices au début pour ne pas planter si select mauvais
-      // On calcule des stats via une requête séparée
     },
   });
 
   const clientIds = clients.map((c) => c.id);
 
-  // ✅ stats safe via groupBy (si table invoice existe)
   const invAgg = clientIds.length
     ? await prisma.invoice.groupBy({
         by: ["clientId"],
@@ -45,17 +41,30 @@ export default async function ClientsPage() {
     ])
   );
 
+  // ✅ On transforme en rows puis tri par total facturé (desc)
+  const rows = clients
+    .map((c) => {
+      const agg = byClient.get(c.id) ?? { count: 0, sum: 0 };
+      return { client: c, agg };
+    })
+    .sort((a, b) => b.agg.sum - a.agg.sum || a.client.name.localeCompare(b.client.name));
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-3xl font-extrabold tracking-tight text-slate-900">
-            Clients
-          </div>
+          <div className="text-3xl font-extrabold tracking-tight text-slate-900">Clients</div>
           <div className="mt-1 text-sm text-slate-600">
             Liste des clients + total facturé (hors annulées)
           </div>
         </div>
+
+        <Link
+          href="/clients/new"
+          className="rounded-2xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+        >
+          + Nouveau client
+        </Link>
       </div>
 
       <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -66,12 +75,13 @@ export default async function ClientsPage() {
               <th className="px-3 py-2 text-left">Contact</th>
               <th className="px-3 py-2 text-right">Nb factures</th>
               <th className="px-3 py-2 text-right">Total facturé</th>
+              <th className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
+
           <tbody>
-            {clients.length ? (
-              clients.map((c) => {
-                const agg = byClient.get(c.id) ?? { count: 0, sum: 0 };
+            {rows.length ? (
+              rows.map(({ client: c, agg }) => {
                 const contact = [c.email, c.phone].filter(Boolean).join(" · ");
 
                 return (
@@ -79,32 +89,51 @@ export default async function ClientsPage() {
                     <td className="px-3 py-2 font-semibold text-slate-900">
                       {c.name}
                       {c.address ? (
-                        <div className="text-xs font-normal text-slate-500">
-                          {c.address}
-                        </div>
+                        <div className="text-xs font-normal text-slate-500">{c.address}</div>
                       ) : null}
                     </td>
+
                     <td className="px-3 py-2 text-slate-700">
                       {contact || <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="px-3 py-2 text-right text-slate-900">
-                      {agg.count}
-                    </td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-900">
-                      {chf(agg.sum)}
+
+                    <td className="px-3 py-2 text-right text-slate-900">{agg.count}</td>
+
+                    <td className="px-3 py-2 text-right font-semibold text-slate-900">{chf(agg.sum)}</td>
+
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Link
+                          href={`/clients/${c.id}`}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold hover:bg-slate-50"
+                        >
+                          Ouvrir
+                        </Link>
+
+                        <Link
+                          href={`/clients/${c.id}?edit=1`}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold hover:bg-slate-50"
+                        >
+                          Modifier
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );
               })
             ) : (
               <tr>
-                <td colSpan={4} className="px-3 py-3 text-slate-500">
+                <td colSpan={5} className="px-3 py-3 text-slate-500">
                   Aucun client.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="mt-3 text-xs text-slate-500">
+        * Tri par total facturé décroissant (puis alphabétique).
       </div>
     </div>
   );

@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import Link from "next/link";
+import MarkPaidButton from "./MarkPaidButton";
 
-export const dynamic = "force-dynamic"; // ✅ empêche le prerender au build
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 function chf(cents: number) {
@@ -19,7 +21,8 @@ export default async function InvoicesPage(props: { searchParams?: Promise<any> 
       issueDate: { gte: yearStart, lt: yearEnd },
       status: { not: "CANCELED" },
     },
-    orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
+    // ✅ Tri demandé: 2025001, 2025002... du haut vers le bas
+    orderBy: [{ number: "asc" }, { createdAt: "asc" }],
     select: {
       id: true,
       number: true,
@@ -29,13 +32,11 @@ export default async function InvoicesPage(props: { searchParams?: Promise<any> 
       amountGrossCents: true,
       amountNetCents: true,
       amountVatCents: true,
-
-      // ✅ paiement (si colonnes existent en DB)
       paidAt: true,
       paidAmountCents: true,
       discountRateBp: true,
       discountCents: true,
-
+      projectName: true,
       client: { select: { id: true, name: true } },
     },
   });
@@ -59,26 +60,35 @@ export default async function InvoicesPage(props: { searchParams?: Promise<any> 
           <div className="mt-1 text-sm text-slate-600">Liste &amp; suivi (année {year})</div>
         </div>
 
-        <form className="flex items-center gap-2">
-          <select
-            name="year"
-            defaultValue={String(year)}
-            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            {Array.from({ length: 7 }).map((_, i) => {
-              const y = new Date().getFullYear() - 3 + i;
-              return (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              );
-            })}
-          </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <form className="flex items-center gap-2">
+            <select
+              name="year"
+              defaultValue={String(year)}
+              className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+            >
+              {Array.from({ length: 7 }).map((_, i) => {
+                const y = new Date().getFullYear() - 3 + i;
+                return (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                );
+              })}
+            </select>
 
-          <button className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
-            Appliquer
-          </button>
-        </form>
+            <button className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+              Appliquer
+            </button>
+          </form>
+
+          <Link
+            href="/invoices/create"
+            className="rounded-2xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+          >
+            + Nouvelle facture
+          </Link>
+        </div>
       </div>
 
       {/* vitrines */}
@@ -116,17 +126,20 @@ export default async function InvoicesPage(props: { searchParams?: Promise<any> 
               <tr className="border-b">
                 <th className="py-2 text-left">N°</th>
                 <th className="py-2 text-left">Client</th>
+                <th className="py-2 text-left">Projet</th>
                 <th className="py-2 text-left">Date</th>
                 <th className="py-2 text-left">Échéance</th>
                 <th className="py-2 text-left">Statut</th>
                 <th className="py-2 text-right">TTC</th>
                 <th className="py-2 text-right">Payé</th>
+                <th className="py-2 text-right">Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-4 text-slate-600">
+                  <td colSpan={9} className="py-4 text-slate-600">
                     Aucune facture pour {year}.
                   </td>
                 </tr>
@@ -135,8 +148,10 @@ export default async function InvoicesPage(props: { searchParams?: Promise<any> 
                   <tr key={inv.id} className="border-b last:border-b-0">
                     <td className="py-2 font-semibold text-slate-900">{inv.number}</td>
                     <td className="py-2">{inv.client?.name ?? "-"}</td>
+                    <td className="py-2 text-slate-700">{inv.projectName ?? <span className="text-slate-400">—</span>}</td>
                     <td className="py-2">{new Date(inv.issueDate).toLocaleDateString()}</td>
                     <td className="py-2">{new Date(inv.dueDate).toLocaleDateString()}</td>
+
                     <td className="py-2">
                       <span
                         className={[
@@ -151,11 +166,36 @@ export default async function InvoicesPage(props: { searchParams?: Promise<any> 
                         {inv.status}
                       </span>
                     </td>
-                    <td className="py-2 text-right font-semibold text-slate-900">{chf(inv.amountGrossCents)}</td>
+
+                    <td className="py-2 text-right font-semibold text-slate-900">
+                      {chf(inv.amountGrossCents)}
+                    </td>
+
                     <td className="py-2 text-right">
                       {inv.status === "PAID"
                         ? chf(inv.paidAmountCents ?? inv.amountGrossCents)
                         : "-"}
+                    </td>
+
+                    <td className="py-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Link
+                          href={`/clients/${inv.client?.id ?? ""}`}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold hover:bg-slate-50"
+                        >
+                          Client
+                        </Link>
+
+                        {inv.status === "OPEN" ? (
+                          <MarkPaidButton
+                            invoiceId={inv.id}
+                            invoiceNumber={inv.number}
+                            grossCents={inv.amountGrossCents}
+                          />
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -165,7 +205,7 @@ export default async function InvoicesPage(props: { searchParams?: Promise<any> 
         </div>
 
         <div className="mt-3 text-xs text-slate-500">
-          * Si la DB n’a pas encore les colonnes de paiement, il faut appliquer le SQL (voir plus bas).
+          * Tri par numéro de facture croissant (2025001 → 2025002 → …).
         </div>
       </div>
     </div>

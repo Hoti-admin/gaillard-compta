@@ -1,6 +1,7 @@
+// src/app/layout.tsx
 import "./globals.css";
 import TopNav from "@/components/TopNav";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: "Comptabilité – GAILLARD",
@@ -8,7 +9,6 @@ export const metadata: Metadata = {
 
   // ✅ PWA / iPhone
   manifest: "/manifest.webmanifest",
-  themeColor: "#0b2a5b",
 
   appleWebApp: {
     capable: true,
@@ -23,6 +23,11 @@ export const metadata: Metadata = {
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
   },
+};
+
+// ✅ Next 16: themeColor doit être dans viewport (et plus dans metadata)
+export const viewport: Viewport = {
+  themeColor: "#0b2a5b",
 };
 
 export default function RootLayout({

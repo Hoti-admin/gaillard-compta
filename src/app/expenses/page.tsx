@@ -16,6 +16,7 @@ function monthKey(d: Date) {
   return `${mm}.${yyyy}`;
 }
 
+// ✅ LABELS alignés sur ton enum Prisma (schema)
 const EXPENSE_CATEGORY_LABEL: Record<string, string> = {
   RESTAURANT: "Restaurant",
   CARBURANT: "Carburant",
@@ -25,16 +26,16 @@ const EXPENSE_CATEGORY_LABEL: Record<string, string> = {
   TELEPHONE: "Téléphone",
   INTERNET: "Internet",
   TRANSPORT: "Transport",
-  DIVERS: "Divers",
 
-  // ✅ Ajouts demandés
-  LOYER_DEPOT: "Loyer / Dépôt",
+  LOYER: "Loyer",
+  SALAIRE_EMPLOYE: "Salaires employés",
+  SALAIRE_CADRE: "Salaires cadres",
   ASSURANCE_MALADIE: "Assurance maladie",
   ASSURANCE_LPP: "Assurance LPP",
-  SALAIRE_EMPLOYES: "Salaires employés",
-  SALAIRE_CADRES: "Salaires cadres",
-  GARAGE_REPARATIONS: "Garage / réparations véhicules",
   ASSURANCE_VEHICULE: "Assurance véhicule",
+  REPARATION_VEHICULE: "Réparation véhicule",
+
+  DIVERS: "Divers",
 };
 
 function catLabel(key: string) {
@@ -47,13 +48,11 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
   const yearStart = new Date(`${year}-01-01T00:00:00.000Z`);
   const yearEnd = new Date(`${year + 1}-01-01T00:00:00.000Z`);
 
-  // Dépenses année
   const expenses = await prisma.expense.findMany({
     where: { date: { gte: yearStart, lt: yearEnd } },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
   });
 
-  // Encaissé année (factures payées)
   const paidInvoices = await prisma.invoice.findMany({
     where: {
       status: "PAID",
@@ -153,29 +152,28 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
         </div>
       </div>
 
-      {/* Ajouter dépense */}
+      {/* Ajouter dépense + Résumé mois */}
       <div className="mt-6 grid gap-3 lg:grid-cols-3">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-extrabold text-slate-900">+ Ajouter une dépense</div>
-          </div>
+          <div className="text-lg font-extrabold text-slate-900">+ Ajouter une dépense</div>
           <div className="mt-4">
             <ExpenseFormClient mode="create" />
           </div>
         </div>
 
-        {/* Résumé par mois */}
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
           <div className="text-lg font-extrabold text-slate-900">Résumé par mois</div>
+
           <div className="mt-3 overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="text-xs text-slate-600">
                 <tr className="border-b">
                   <th className="py-2 text-left">Mois</th>
-                  <th className="py-2 text-left">Total</th>
+                  <th className="py-2 text-right">Total TTC</th>
                   <th className="py-2 text-left">Détails</th>
                 </tr>
               </thead>
+
               <tbody>
                 {monthRows.length === 0 ? (
                   <tr>
@@ -184,17 +182,28 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
                     </td>
                   </tr>
                 ) : (
-                  monthRows.map(([m, v]) => (
-                    <tr key={m} className="border-b last:border-b-0">
-                      <td className="py-2 font-semibold text-slate-900">{m}</td>
-                      <td className="py-2 font-semibold text-slate-900">{chf(v.total)}</td>
-                      <td className="py-2 text-slate-600">
-                        {Object.entries(v.byCat)
-                          .map(([k, cents]) => `${catLabel(k)}: ${chf(cents)}`)
-                          .join(" · ")}
-                      </td>
-                    </tr>
-                  ))
+                  monthRows.map(([m, v]) => {
+                    const cats = Object.entries(v.byCat).sort((a, b) => b[1] - a[1]);
+                    return (
+                      <tr key={m} className="border-b last:border-b-0 align-top">
+                        <td className="py-3 font-extrabold text-slate-900">{m}</td>
+                        <td className="py-3 text-right font-extrabold text-slate-900">{chf(v.total)}</td>
+                        <td className="py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {cats.map(([k, cents]) => (
+                              <span
+                                key={k}
+                                className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-800"
+                              >
+                                {catLabel(k)}
+                                <span className="font-extrabold text-slate-900">{chf(cents)}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -213,11 +222,12 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
                 <th className="py-2 text-left">Date</th>
                 <th className="py-2 text-left">Fournisseur</th>
                 <th className="py-2 text-left">Catégorie</th>
-                <th className="py-2 text-left">TTC</th>
-                <th className="py-2 text-left">TVA</th>
+                <th className="py-2 text-right">TTC</th>
+                <th className="py-2 text-right">TVA</th>
                 <th className="py-2 text-left">Actions</th>
               </tr>
             </thead>
+
             <tbody>
               {expenses.length === 0 ? (
                 <tr>
@@ -231,12 +241,11 @@ export default async function ExpensesPage(props: { searchParams?: Promise<any> 
                     <td className="py-2">{new Date(e.date as any).toLocaleDateString()}</td>
                     <td className="py-2 font-semibold text-slate-900">{e.vendor}</td>
                     <td className="py-2">{catLabel(e.category)}</td>
-                    <td className="py-2 font-semibold text-slate-900">{chf(e.amountGrossCents)}</td>
-                    <td className="py-2">{chf(e.amountVatCents)}</td>
+                    <td className="py-2 text-right font-semibold text-slate-900">{chf(e.amountGrossCents)}</td>
+                    <td className="py-2 text-right">{chf(e.amountVatCents)}</td>
                     <td className="py-2">
                       <div className="flex flex-wrap gap-2">
                         <EditExpenseButton expense={e} />
-
                         <form
                           action={async () => {
                             "use server";
