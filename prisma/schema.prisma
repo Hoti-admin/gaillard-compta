@@ -44,7 +44,6 @@ enum ExpenseCategory {
   ASSURANCE_VEHICULE
 }
 
-
 model Client {
   id        String   @id @default(cuid())
   name      String
@@ -158,7 +157,7 @@ model BillPayment {
   id String @id @default(cuid())
 
   billId String
-  bill   Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
 
   date        DateTime
   amountCents Int
@@ -203,28 +202,28 @@ enum EmployeeType {
 }
 
 model Employee {
-  id        String       @id @default(cuid())
+  id        String   @id @default(uuid())
   name      String
-  type      EmployeeType @default(EMPLOYE)
-  active    Boolean      @default(true)
-  createdAt DateTime     @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   salaries Salary[]
-
-  @@index([name])
-  @@index([active])
 }
 
 model Salary {
   id           String   @id @default(uuid())
-  employee     String
   month        DateTime
-  grossCents   Int      @default(0)
-  chargesCents Int      @default(0)
-  netCents     Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  grossCents   Int
+  chargesCents Int
+  netCents     Int
 
-  @@unique([employee, month])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  expense Expense?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, month])
 }
-
