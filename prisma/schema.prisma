@@ -216,26 +216,15 @@ model Employee {
 }
 
 model Salary {
-  id String @id @default(cuid())
+  id           String   @id @default(uuid())
+  employee     String
+  month        DateTime
+  grossCents   Int      @default(0)
+  chargesCents Int      @default(0)
+  netCents     Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  year  Int
-  month Int // 1..12
-
-  grossCents   Int
-  chargesCents Int
-  netCents     Int
-
-  notes String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  expense Expense?
-
-  @@unique([employeeId, year, month])
-  @@index([year, month])
-  @@index([employeeId])
+  @@unique([employee, month])
 }
+
