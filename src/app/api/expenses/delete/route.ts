@@ -1,31 +1,34 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { supabaseAdmin } from "@/lib/supabase/admin";
-import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
-export const runtime = "nodejs";
+const BodySchema = z.object({
+  id: z.string().min(1),
+});
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const id = String(body.id || "").trim();
+    const body = await req.json();
+    const parsed = BodySchema.safeParse(body);
 
-    if (!id) return NextResponse.json({ error: "id manquant" }, { status: 400 });
-
-    const exp = await prisma.expense.findUnique({ where: { id } });
-    if (!exp) return NextResponse.json({ error: "Dépense introuvable" }, { status: 404 });
-
-    const supabase = supabaseAdmin();
-
-    if (exp.receiptPath) {
-      await supabase.storage.from("expenses").remove([exp.receiptPath]).catch(() => {});
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Données invalides", details: parsed.error.flatten() },
+        { status: 400 }
+      );
     }
 
+    const { id } = parsed.data;
+
+    // Supprime la dépense en DB (plus de suppression storage car receiptPath n'existe pas)
     await prisma.expense.delete({ where: { id } });
 
-    revalidatePath("/expenses");
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Erreur suppression" }, { status: 500 });
+  } catch (err: any) {
+    console.error("API /expenses/delete error:", err);
+    return NextResponse.json(
+      { error: err?.message ?? "Erreur serveur" },
+      { status: 500 }
+    );
   }
 }
