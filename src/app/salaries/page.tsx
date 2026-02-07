@@ -85,6 +85,14 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
     },
     { gross: 0, charges: 0, net: 0 }
   );
+const employees = await prisma.employee.findMany({
+  orderBy: { name: "asc" },
+  select: {
+    id: true,
+    name: true,
+    type: true, // ✅ AJOUT ICI
+  },
+});
 
   const months = Array.from({ length: 12 }).map((_, i) => i + 1);
 
