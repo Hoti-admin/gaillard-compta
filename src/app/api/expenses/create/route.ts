@@ -1,66 +1,70 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
 
-function toInt(v: any, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.round(n) : fallback;
-}
+const BodySchema = z.object({
+  date: z.string().min(1), // "2026-02-07"
+  vendor: z.string().min(1),
+  category: z.string().min(1),
 
-function consideredVat(v: any) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return 8.1;
-  if (n < 0) return 0;
-  if (n > 100) return 8.1;
-  return n;
+  // montants en CENTIMES
+  amountGrossCents: z.number().int().nonnegative(),
+  vatRateBp: z.number().int().min(0).max(10000).optional(), // ex: 810 = 8.1%
+  notes: z.string().optional().nullable(),
+
+  // IMPORTANT: on accepte receiptPath si un vieux front l’envoie,
+  // mais on l’ignore (colonne inexistante en DB).
+  receiptPath: z.any().optional(),
+});
+
+function computeVatParts(grossCents: number, vatRateBp: number) {
+  // vatRateBp = 810 => 8.10%
+  // net = gross / (1 + rate)
+  const rate = vatRateBp / 10000;
+  const net = Math.round(grossCents / (1 + rate));
+  const vat = grossCents - net;
+  return { net, vat };
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const parsed = BodySchema.safeParse(body);
 
-    const dateStr = String(body.date || "");
-    const vendor = String(body.vendor || "").trim();
-    const category = String(body.category || "DIVERS");
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Données invalides", details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
 
-    // ✅ FIX ICI
-    const vatRate = consideredVat(body.vatRateBp ?? body.vatRate ?? 8.1);
+    const { date, vendor, category, amountGrossCents } = parsed.data;
+    const vatRateBp = parsed.data.vatRateBp ?? 810;
+    const notes = parsed.data.notes?.trim() ? parsed.data.notes.trim() : null;
 
-    const amountGrossCents = toInt(body.amountGrossCents ?? 0);
-    const notes = body.notes ? String(body.notes) : null;
-    const receiptPath = body.receiptPath ? String(body.receiptPath) : null;
-
-    if (!dateStr) return NextResponse.json({ error: "Date obligatoire" }, { status: 400 });
-    if (!vendor) return NextResponse.json({ error: "Libellé obligatoire" }, { status: 400 });
-    if (!amountGrossCents || amountGrossCents <= 0)
-      return NextResponse.json({ error: "Montant TTC invalide" }, { status: 400 });
-
-    const date = new Date(dateStr);
-    if (Number.isNaN(date.getTime()))
-      return NextResponse.json({ error: "Date invalide" }, { status: 400 });
-
-    // 8.1 -> 810 (basis points)
-    const vatRateBp = Math.round(Number(vatRate) * 100);
-
-    const gross = amountGrossCents;
-    const net = vatRateBp > 0 ? Math.round(gross / (1 + vatRateBp / 10000)) : gross;
-    const vat = gross - net;
+    const { net, vat } = computeVatParts(amountGrossCents, vatRateBp);
 
     const expense = await prisma.expense.create({
       data: {
-        date,
+        // En DB c’est un DATE, Prisma accepte un Date JS
+        date: new Date(date),
         vendor,
-        category: category as any,
+        category,
         vatRateBp,
-        amountGrossCents: gross,
+        amountGrossCents,
         amountNetCents: net,
         amountVatCents: vat,
         notes,
-        receiptPath,
+        // ✅ PAS de receiptPath (colonne inexistante)
       },
     });
 
     return NextResponse.json({ ok: true, expense });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Erreur serveur" }, { status: 500 });
+  } catch (err: any) {
+    console.error("API /expenses/create error:", err);
+    return NextResponse.json(
+      { error: err?.message ?? "Erreur serveur" },
+      { status: 500 }
+    );
   }
 }
