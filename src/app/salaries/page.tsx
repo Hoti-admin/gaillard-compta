@@ -15,25 +15,34 @@ function monthLabel(y: number, m: number) {
 
 export default async function SalariesPage(props: { searchParams?: Promise<any> }) {
   const sp = (await props.searchParams) ?? {};
-  const year = Number(sp.year ?? new Date().getFullYear());
-  const month = Number(sp.month ?? new Date().getMonth() + 1);
+
+  // ✅ UI en NUMBER (select + onglets)
+  const yearNum = Number(sp.year ?? new Date().getFullYear());
+  const monthNum = Number(sp.month ?? new Date().getMonth() + 1);
+
+  // ✅ Prisma en STRING (car ton schema Salary.year / Salary.month sont des strings)
+  const yearStr = String(yearNum);
+  const monthStr = String(monthNum).padStart(2, "0");
 
   const employees = await prisma.employee.findMany({
-  orderBy: { name: "asc" },
-  select: {
-    id: true,
-    name: true,
-  },
-});
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
 
   const salaries = await prisma.salary.findMany({
-    where: { year, month },
+    where: { year: yearStr, month: monthStr },
     orderBy: { employee: { name: "asc" } },
-    include: { employee: { select: { id: true, name: true, type: true } }, expense: true },
+    include: {
+      employee: { select: { id: true, name: true } }, // ✅ pas de "type"
+      expense: true,
+    },
   });
 
   const yearSalaries = await prisma.salary.findMany({
-    where: { year },
+    where: { year: yearStr },
     select: { grossCents: true, chargesCents: true, netCents: true, month: true },
   });
 
@@ -72,7 +81,7 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
         <form className="flex items-center gap-2">
           <select
             name="year"
-            defaultValue={String(year)}
+            defaultValue={String(yearNum)}
             className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
           >
             {Array.from({ length: 7 }).map((_, i) => {
@@ -94,17 +103,19 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
       {/* Onglets mois */}
       <div className="mt-5 flex flex-wrap gap-2">
         {months.map((m) => {
-          const active = m === month;
+          const active = m === monthNum;
           return (
             <a
               key={m}
-              href={`/salaries?year=${year}&month=${m}`}
+              href={`/salaries?year=${yearNum}&month=${m}`}
               className={[
                 "rounded-2xl px-3 py-2 text-sm font-semibold",
-                active ? "bg-blue-700 text-white" : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+                active
+                  ? "bg-blue-700 text-white"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
               ].join(" ")}
             >
-              {monthLabel(year, m)}
+              {monthLabel(yearNum, m)}
             </a>
           );
         })}
@@ -113,7 +124,9 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
       {/* Résumé */}
       <div className="mt-6 grid gap-3 md:grid-cols-2">
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-semibold text-slate-600">TOTAL DU MOIS ({monthLabel(year, month)})</div>
+          <div className="text-xs font-semibold text-slate-600">
+            TOTAL DU MOIS ({monthLabel(yearNum, monthNum)})
+          </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Brut</div>
@@ -134,7 +147,7 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-semibold text-slate-600">TOTAL ANNÉE ({year})</div>
+          <div className="text-xs font-semibold text-slate-600">TOTAL ANNÉE ({yearNum})</div>
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Brut</div>
@@ -154,7 +167,12 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
 
       {/* Client component (forms + table) */}
       <div className="mt-6">
-        <SalariesClient year={year} month={month} employees={employees} salaries={salaries} />
+        <SalariesClient
+          year={yearNum}
+          month={monthNum}
+          employees={employees}
+          salaries={salaries}
+        />
       </div>
     </div>
   );
