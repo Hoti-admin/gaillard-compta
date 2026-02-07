@@ -13,54 +13,74 @@ function monthLabel(y: number, m: number) {
   return `${mm}.${y}`;
 }
 
+/**
+ * ✅ On essaye de retrouver la "date" du salaire sans dépendre du nom exact du champ.
+ * Adapte la liste si dans ton schema c’est un autre champ.
+ */
+function getSalaryDate(s: any): Date | null {
+  const raw =
+    s?.date ??
+    s?.period ??
+    s?.monthDate ??
+    s?.salaryDate ??
+    s?.createdAt ??
+    null;
+
+  if (!raw) return null;
+
+  const d = raw instanceof Date ? raw : new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export default async function SalariesPage(props: { searchParams?: Promise<any> }) {
   const sp = (await props.searchParams) ?? {};
 
-  // ✅ UI en NUMBER (select + onglets)
+  // UI en NUMBER
   const yearNum = Number(sp.year ?? new Date().getFullYear());
   const monthNum = Number(sp.month ?? new Date().getMonth() + 1);
 
-  // ✅ Prisma en STRING (car ton schema Salary.year / Salary.month sont des strings)
-  const yearStr = String(yearNum);
-  const monthStr = String(monthNum).padStart(2, "0");
-
   const employees = await prisma.employee.findMany({
     orderBy: { name: "asc" },
-    select: {
-      id: true,
-      name: true,
-    },
+    select: { id: true, name: true },
   });
 
-  const salaries = await prisma.salary.findMany({
-    where: { year: yearStr, month: monthStr },
+  // ✅ On évite tout `where: { year/month }` (car year n’existe pas dans Salary)
+  // On récupère les salaires et on filtre côté JS.
+  const allSalaries = await prisma.salary.findMany({
     orderBy: { employee: { name: "asc" } },
     include: {
-      employee: { select: { id: true, name: true } }, // ✅ pas de "type"
+      employee: { select: { id: true, name: true } },
       expense: true,
     },
   });
 
-  const yearSalaries = await prisma.salary.findMany({
-    where: { year: yearStr },
-    select: { grossCents: true, chargesCents: true, netCents: true, month: true },
+  const salaries = allSalaries.filter((s: any) => {
+    const d = getSalaryDate(s);
+    if (!d) return false;
+    return d.getFullYear() === yearNum && d.getMonth() + 1 === monthNum;
+  });
+
+  const yearSalaries = allSalaries.filter((s: any) => {
+    const d = getSalaryDate(s);
+    if (!d) return false;
+    return d.getFullYear() === yearNum;
   });
 
   const monthTotal = salaries.reduce(
-    (acc, s) => {
-      acc.gross += s.grossCents;
-      acc.charges += s.chargesCents;
-      acc.net += s.netCents;
+    (acc: any, s: any) => {
+      acc.gross += s.grossCents ?? 0;
+      acc.charges += s.chargesCents ?? 0;
+      acc.net += s.netCents ?? 0;
       return acc;
     },
     { gross: 0, charges: 0, net: 0 }
   );
 
   const yearTotal = yearSalaries.reduce(
-    (acc, s) => {
-      acc.gross += s.grossCents;
-      acc.charges += s.chargesCents;
-      acc.net += s.netCents;
+    (acc: any, s: any) => {
+      acc.gross += s.grossCents ?? 0;
+      acc.charges += s.chargesCents ?? 0;
+      acc.net += s.netCents ?? 0;
       return acc;
     },
     { gross: 0, charges: 0, net: 0 }
@@ -141,6 +161,7 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
               <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(monthTotal.net)}</div>
             </div>
           </div>
+
           <div className="mt-3 text-xs text-slate-500">
             * Une dépense “Salaire” est créée automatiquement (sans TVA) = Brut + Charges.
           </div>
@@ -165,14 +186,9 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
         </div>
       </div>
 
-      {/* Client component (forms + table) */}
+      {/* Client component */}
       <div className="mt-6">
-        <SalariesClient
-          year={yearNum}
-          month={monthNum}
-          employees={employees}
-          salaries={salaries}
-        />
+        <SalariesClient year={yearNum} month={monthNum} employees={employees} salaries={salaries as any} />
       </div>
     </div>
   );
