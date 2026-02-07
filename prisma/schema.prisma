@@ -169,41 +169,10 @@ model BillPayment {
   @@index([date])
 }
 
-model Expense {
-  id String @id @default(cuid())
-
-  date     DateTime
-  vendor   String
-  category ExpenseCategory
-
-  vatRateBp        Int @default(810)
-  amountGrossCents Int
-  amountNetCents   Int
-  amountVatCents   Int
-
-  receiptPath String?
-  notes       String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ✅ 1 salaire -> 1 dépense : salaryId doit être UNIQUE
-  salaryId String? @unique
-  salary   Salary? @relation(fields: [salaryId], references: [id], onDelete: SetNull)
-
-  @@index([date])
-  @@index([category])
-  @@index([vendor])
-}
-
-enum EmployeeType {
-  EMPLOYE
-  CADRE
-}
-
 model Employee {
-  id        String   @id @default(uuid())
+  id        String   @id @default(uuid()) @db.Uuid
   name      String
+  type      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -211,13 +180,13 @@ model Employee {
 }
 
 model Salary {
-  id           String   @id @default(uuid())
-  month        DateTime
+  id           String   @id @default(uuid()) @db.Uuid
+  month        DateTime @db.Date
   grossCents   Int
   chargesCents Int
   netCents     Int
 
-  employeeId String
+  employeeId String   @db.Uuid
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   expense Expense?
@@ -226,4 +195,25 @@ model Salary {
   updatedAt DateTime @updatedAt
 
   @@unique([employeeId, month])
+}
+
+model Expense {
+  id String @id @default(uuid()) @db.Uuid
+
+  date     DateTime @db.Date
+  vendor   String
+  category String
+
+  vatRateBp        Int
+  amountGrossCents Int
+  amountNetCents   Int
+  amountVatCents   Int
+
+  notes String?
+
+  salaryId String? @unique @db.Uuid
+  salary   Salary? @relation(fields: [salaryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
