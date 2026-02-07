@@ -38,10 +38,15 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
   // UI en NUMBER
   const yearNum = Number(sp.year ?? new Date().getFullYear());
   const monthNum = Number(sp.month ?? new Date().getMonth() + 1);
+const employees = await prisma.employee.findMany({
+  orderBy: { name: "asc" },
+  select: {
+    id: true,
+    name: true,
+    type: true, // ✅ requis par SalariesClient
+  },
+});
 
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
 
   // ✅ On évite tout `where: { year/month }` (car year n’existe pas dans Salary)
   // On récupère les salaires et on filtre côté JS.
