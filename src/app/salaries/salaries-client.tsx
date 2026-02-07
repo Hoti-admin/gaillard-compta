@@ -3,11 +3,17 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Employee = { id: string; name: string; type: "EMPLOYE" | "CADRE" };
+/* =======================
+   Types SIMPLIFIÉS
+   ======================= */
+
+type Employee = {
+  id: string;
+  name: string;
+};
+
 type SalaryRow = {
   id: string;
-  year: number;
-  month: number;
   grossCents: number;
   chargesCents: number;
   netCents: number;
@@ -16,16 +22,28 @@ type SalaryRow = {
   expense: { id: string } | null;
 };
 
+/* =======================
+   Helpers
+   ======================= */
+
 function chf(cents: number) {
   return `CHF ${(cents / 100).toFixed(2)}`;
 }
 
 function parseMoneyToCents(input: string) {
-  const s = String(input ?? "").trim().replace("CHF", "").replace(/\s/g, "").replace(",", ".");
+  const s = String(input ?? "")
+    .trim()
+    .replace("CHF", "")
+    .replace(/\s/g, "")
+    .replace(",", ".");
   const n = Number(s);
   if (!Number.isFinite(n) || n < 0) return null;
   return Math.round(n * 100);
 }
+
+/* =======================
+   Component
+   ======================= */
 
 export default function SalariesClient(props: {
   year: number;
@@ -35,9 +53,10 @@ export default function SalariesClient(props: {
 }) {
   const router = useRouter();
 
+  /* ---- Ajouter employé ---- */
   const [empName, setEmpName] = useState("");
-  const [empType, setEmpType] = useState<Employee["type"]>("EMPLOYE");
 
+  /* ---- Ajouter salaire ---- */
   const [employeeId, setEmployeeId] = useState(props.employees[0]?.id ?? "");
   const [gross, setGross] = useState("");
   const [charges, setCharges] = useState("");
@@ -58,6 +77,10 @@ export default function SalariesClient(props: {
     );
   }, [list]);
 
+  /* =======================
+     Actions
+     ======================= */
+
   async function createEmployee(e: React.FormEvent) {
     e.preventDefault();
     const name = empName.trim();
@@ -66,11 +89,12 @@ export default function SalariesClient(props: {
     const res = await fetch("/api/salaries/employee-create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, type: empType }),
+      body: JSON.stringify({ name }),
     });
 
     const json = await res.json();
     if (!res.ok) return alert(json?.error ?? "Erreur création employé");
+
     setEmpName("");
     router.refresh();
   }
@@ -79,6 +103,7 @@ export default function SalariesClient(props: {
     e.preventDefault();
 
     if (!employeeId) return alert("Choisis un employé");
+
     const grossCents = parseMoneyToCents(gross);
     const chargesCents = parseMoneyToCents(charges);
     const netCents = parseMoneyToCents(net);
@@ -122,14 +147,20 @@ export default function SalariesClient(props: {
 
     const json = await res.json();
     if (!res.ok) return alert(json?.error ?? "Erreur suppression");
+
     router.refresh();
   }
+
+  /* =======================
+     Render
+     ======================= */
 
   return (
     <div className="grid gap-3 lg:grid-cols-3">
       {/* Ajouter employé */}
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="text-lg font-extrabold text-slate-900">+ Ajouter un employé</div>
+
         <form onSubmit={createEmployee} className="mt-4 grid gap-3">
           <input
             value={empName}
@@ -137,14 +168,6 @@ export default function SalariesClient(props: {
             placeholder="Nom (ex: Kevin, Franco...)"
             className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
           />
-          <select
-            value={empType}
-            onChange={(e) => setEmpType(e.target.value as any)}
-            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="EMPLOYE">Employé</option>
-            <option value="CADRE">Cadre</option>
-          </select>
 
           <button className="rounded-2xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">
             Ajouter
@@ -158,13 +181,13 @@ export default function SalariesClient(props: {
           <div>
             <div className="text-lg font-extrabold text-slate-900">+ Ajouter un salaire</div>
             <div className="mt-1 text-xs text-slate-500">
-              Crée automatiquement une dépense (catégorie SALAIRE_EMPLOYE / SALAIRE_CADRE)
+              Crée automatiquement une dépense (Brut + Charges, TVA 0)
             </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-            Totaux mois: <b>{chf(monthTotals.gross)}</b> brut · <b>{chf(monthTotals.charges)}</b> charges ·{" "}
-            <b>{chf(monthTotals.net)}</b> net
+            Totaux mois : <b>{chf(monthTotals.gross)}</b> brut ·{" "}
+            <b>{chf(monthTotals.charges)}</b> charges · <b>{chf(monthTotals.net)}</b> net
           </div>
         </div>
 
@@ -178,48 +201,34 @@ export default function SalariesClient(props: {
             >
               {props.employees.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.name} ({e.type === "CADRE" ? "Cadre" : "Employé"})
+                  {e.name}
                 </option>
               ))}
             </select>
           </div>
 
-          <div>
-            <div className="text-xs font-semibold text-slate-600 mb-1">Brut</div>
-            <input
-              value={gross}
-              onChange={(e) => setGross(e.target.value)}
-              placeholder="ex: 5200"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold text-slate-600 mb-1">Charges</div>
-            <input
-              value={charges}
-              onChange={(e) => setCharges(e.target.value)}
-              placeholder="ex: 1200"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-          </div>
-
-          <div>
-            <div className="text-xs font-semibold text-slate-600 mb-1">Net</div>
-            <input
-              value={net}
-              onChange={(e) => setNet(e.target.value)}
-              placeholder="ex: 4300"
-              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-          </div>
+          {["Brut", "Charges", "Net"].map((label, i) => {
+            const val = [gross, charges, net][i];
+            const setter = [setGross, setCharges, setNet][i];
+            return (
+              <div key={label}>
+                <div className="text-xs font-semibold text-slate-600 mb-1">{label}</div>
+                <input
+                  value={val}
+                  onChange={(e) => setter(e.target.value)}
+                  placeholder="ex: 5200"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                />
+              </div>
+            );
+          })}
 
           <div className="md:col-span-6">
             <div className="text-xs font-semibold text-slate-600 mb-1">Notes (optionnel)</div>
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="ex: 13ème salaire, acompte, prime..."
+              placeholder="ex: prime, acompte, 13ème salaire..."
               className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
             />
           </div>
@@ -240,7 +249,7 @@ export default function SalariesClient(props: {
                 <th className="px-3 py-2 text-right">Brut</th>
                 <th className="px-3 py-2 text-right">Charges</th>
                 <th className="px-3 py-2 text-right">Net</th>
-                <th className="px-3 py-2 text-left">Lien dépense</th>
+                <th className="px-3 py-2 text-left">Dépense</th>
                 <th className="px-3 py-2 text-left">Actions</th>
               </tr>
             </thead>
@@ -248,23 +257,12 @@ export default function SalariesClient(props: {
               {list.length ? (
                 list.map((s) => (
                   <tr key={s.id} className="border-t border-slate-200">
-                    <td className="px-3 py-2 font-semibold text-slate-900">
-                      {s.employee.name}
-                      <div className="text-xs font-normal text-slate-500">
-                        {s.employee.type === "CADRE" ? "Cadre" : "Employé"}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-right font-semibold">{chf(s.grossCents)}</td>
+                    <td className="px-3 py-2 font-semibold">{s.employee.name}</td>
+                    <td className="px-3 py-2 text-right">{chf(s.grossCents)}</td>
                     <td className="px-3 py-2 text-right">{chf(s.chargesCents)}</td>
                     <td className="px-3 py-2 text-right">{chf(s.netCents)}</td>
-                    <td className="px-3 py-2 text-slate-700">
-                      {s.expense ? (
-                        <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
-                          OK (Expense)
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
+                    <td className="px-3 py-2">
+                      {s.expense ? "OK" : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-3 py-2">
                       <button

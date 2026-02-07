@@ -13,10 +13,6 @@ function monthLabel(y: number, m: number) {
   return `${mm}.${y}`;
 }
 
-/**
- * ✅ Retrouve la "date" du salaire sans dépendre du nom exact du champ.
- * Adapte la liste si dans ton schema c’est un autre champ.
- */
 function getSalaryDate(s: any): Date | null {
   const raw =
     s?.date ??
@@ -27,7 +23,6 @@ function getSalaryDate(s: any): Date | null {
     null;
 
   if (!raw) return null;
-
   const d = raw instanceof Date ? raw : new Date(raw);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -35,26 +30,20 @@ function getSalaryDate(s: any): Date | null {
 export default async function SalariesPage(props: { searchParams?: Promise<any> }) {
   const sp = (await props.searchParams) ?? {};
 
-  // UI en NUMBER
   const yearNum = Number(sp.year ?? new Date().getFullYear());
   const monthNum = Number(sp.month ?? new Date().getMonth() + 1);
 
-  // ✅ 1 seule fois (et avec type car SalariesClient l'attend)
+  // ✅ Employee n'a pas "type" -> on sélectionne seulement ce qui existe
   const employees = await prisma.employee.findMany({
     orderBy: { name: "asc" },
-    select: {
-      id: true,
-      name: true,
-      type: true,
-    },
+    select: { id: true, name: true },
   });
 
-  // ✅ On évite tout `where: { year/month }` (car year/month n’existent pas dans Salary)
-  // On récupère les salaires et on filtre côté JS.
+  // ✅ Salary: on inclut employee (id, name) + expense, puis on filtre par date côté JS
   const allSalaries = await prisma.salary.findMany({
     orderBy: { employee: { name: "asc" } },
     include: {
-      employee: { select: { id: true, name: true, type: true } },
+      employee: { select: { id: true, name: true } },
       expense: true,
     },
   });
@@ -156,23 +145,15 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Brut</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">
-                {chf(monthTotal.gross)}
-              </div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(monthTotal.gross)}</div>
             </div>
-
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Charges</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">
-                {chf(monthTotal.charges)}
-              </div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(monthTotal.charges)}</div>
             </div>
-
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Net</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">
-                {chf(monthTotal.net)}
-              </div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(monthTotal.net)}</div>
             </div>
           </div>
 
@@ -187,23 +168,15 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Brut</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">
-                {chf(yearTotal.gross)}
-              </div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(yearTotal.gross)}</div>
             </div>
-
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Charges</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">
-                {chf(yearTotal.charges)}
-              </div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(yearTotal.charges)}</div>
             </div>
-
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Net</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">
-                {chf(yearTotal.net)}
-              </div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(yearTotal.net)}</div>
             </div>
           </div>
         </div>
@@ -211,12 +184,7 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
 
       {/* Client component */}
       <div className="mt-6">
-        <SalariesClient
-          year={yearNum}
-          month={monthNum}
-          employees={employees}
-          salaries={salaries as any}
-        />
+        <SalariesClient year={yearNum} month={monthNum} employees={employees} salaries={salaries as any} />
       </div>
     </div>
   );
