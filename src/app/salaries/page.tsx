@@ -39,7 +39,6 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
   const yearNum = Number(sp.year ?? new Date().getFullYear());
   const monthNum = Number(sp.month ?? new Date().getMonth() + 1);
 
-  const employees = await prisma.employee.findMany({
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });
