@@ -46,7 +46,7 @@ export async function GET(req: Request) {
         "Montant TVA (CHF)": chf(e.amountVatCents),
         "TVA %": Math.round((e.vatRateBp ?? 810) / 10) / 10,
         Notes: e.notes ?? "",
-        Justificatif: e.receiptPath ? `storage:expenses/${e.receiptPath}` : "",
+        Justificatif: "",
       };
     });
 
