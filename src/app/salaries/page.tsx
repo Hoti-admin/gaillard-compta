@@ -14,7 +14,7 @@ function monthLabel(y: number, m: number) {
 }
 
 /**
- * ✅ On essaye de retrouver la "date" du salaire sans dépendre du nom exact du champ.
+ * ✅ Retrouve la "date" du salaire sans dépendre du nom exact du champ.
  * Adapte la liste si dans ton schema c’est un autre champ.
  */
 function getSalaryDate(s: any): Date | null {
@@ -38,22 +38,23 @@ export default async function SalariesPage(props: { searchParams?: Promise<any> 
   // UI en NUMBER
   const yearNum = Number(sp.year ?? new Date().getFullYear());
   const monthNum = Number(sp.month ?? new Date().getMonth() + 1);
-const employees = await prisma.employee.findMany({
-  orderBy: { name: "asc" },
-  select: {
-    id: true,
-    name: true,
-    type: true, // ✅ requis par SalariesClient
-  },
-});
 
+  // ✅ 1 seule fois (et avec type car SalariesClient l'attend)
+  const employees = await prisma.employee.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+    },
+  });
 
-  // ✅ On évite tout `where: { year/month }` (car year n’existe pas dans Salary)
+  // ✅ On évite tout `where: { year/month }` (car year/month n’existent pas dans Salary)
   // On récupère les salaires et on filtre côté JS.
   const allSalaries = await prisma.salary.findMany({
     orderBy: { employee: { name: "asc" } },
     include: {
-      employee: { select: { id: true, name: true } },
+      employee: { select: { id: true, name: true, type: true } },
       expense: true,
     },
   });
@@ -89,14 +90,6 @@ const employees = await prisma.employee.findMany({
     },
     { gross: 0, charges: 0, net: 0 }
   );
-const employees = await prisma.employee.findMany({
-  orderBy: { name: "asc" },
-  select: {
-    id: true,
-    name: true,
-    type: true, // ✅ AJOUT ICI
-  },
-});
 
   const months = Array.from({ length: 12 }).map((_, i) => i + 1);
 
@@ -159,18 +152,27 @@ const employees = await prisma.employee.findMany({
           <div className="text-xs font-semibold text-slate-600">
             TOTAL DU MOIS ({monthLabel(yearNum, monthNum)})
           </div>
+
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Brut</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(monthTotal.gross)}</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">
+                {chf(monthTotal.gross)}
+              </div>
             </div>
+
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Charges</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(monthTotal.charges)}</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">
+                {chf(monthTotal.charges)}
+              </div>
             </div>
+
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Net</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(monthTotal.net)}</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">
+                {chf(monthTotal.net)}
+              </div>
             </div>
           </div>
 
@@ -181,18 +183,27 @@ const employees = await prisma.employee.findMany({
 
         <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold text-slate-600">TOTAL ANNÉE ({yearNum})</div>
+
           <div className="mt-3 grid gap-2 sm:grid-cols-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Brut</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(yearTotal.gross)}</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">
+                {chf(yearTotal.gross)}
+              </div>
             </div>
+
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Charges</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(yearTotal.charges)}</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">
+                {chf(yearTotal.charges)}
+              </div>
             </div>
+
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold text-slate-600">Net</div>
-              <div className="mt-1 text-lg font-extrabold text-slate-900">{chf(yearTotal.net)}</div>
+              <div className="mt-1 text-lg font-extrabold text-slate-900">
+                {chf(yearTotal.net)}
+              </div>
             </div>
           </div>
         </div>
@@ -200,7 +211,12 @@ const employees = await prisma.employee.findMany({
 
       {/* Client component */}
       <div className="mt-6">
-        <SalariesClient year={yearNum} month={monthNum} employees={employees} salaries={salaries as any} />
+        <SalariesClient
+          year={yearNum}
+          month={monthNum}
+          employees={employees}
+          salaries={salaries as any}
+        />
       </div>
     </div>
   );
